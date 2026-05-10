@@ -309,10 +309,20 @@ class DatabaseClient:
             f'CREATE INDEX IF NOT EXISTS "idx_{_table_name("Structured Data")}_date" '
             f'ON "{_table_name("Structured Data")}" ("{_column_name("Date")}")'
         )
-        connection.execute(
-            f'CREATE INDEX IF NOT EXISTS "idx_{_table_name("Processed Messages")}_fingerprint" '
-            f'ON "{_table_name("Processed Messages")}" ("{_column_name("Fingerprint")}")'
-        )
+        processed_messages_index = f'idx_{_table_name("Processed Messages")}_fingerprint'
+        processed_messages_table = _table_name("Processed Messages")
+        processed_messages_column = _column_name("Fingerprint")
+        if self.is_postgres:
+            connection.execute(f'DROP INDEX IF EXISTS "{processed_messages_index}"')
+            connection.execute(
+                f'CREATE INDEX IF NOT EXISTS "{processed_messages_index}" '
+                f'ON "{processed_messages_table}" (md5(COALESCE("{processed_messages_column}", \'\')))'
+            )
+        else:
+            connection.execute(
+                f'CREATE INDEX IF NOT EXISTS "{processed_messages_index}" '
+                f'ON "{processed_messages_table}" ("{processed_messages_column}")'
+            )
         connection.execute(
             f'CREATE INDEX IF NOT EXISTS "idx_{_table_name("Glide Execution")}_lead_id" '
             f'ON "{_table_name("Glide Execution")}" ("{_column_name("Lead_ID")}")'
