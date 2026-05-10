@@ -1,0 +1,86 @@
+{
+  "name": "MatchLayer Analytics",
+  "scope": "analytics_only",
+  "data_sources": [
+    {
+      "sheet": "Clean Data",
+      "usage": "demand_supply_and_trend_charts"
+    },
+    {
+      "sheet": "Matches",
+      "usage": "match_charts_only"
+    }
+  ],
+  "disallowed_sources": [
+    "Raw Data",
+    "Structured Data",
+    "Rejected / Ignored Data",
+    "Top Leads",
+    "Demand Summary",
+    "Supply Summary",
+    "Manual Entries",
+    "Config",
+    "Location Mapping",
+    "Property Type Mapping",
+    "Scoring Weights"
+  ],
+  "required_fields": [
+    "Date",
+    "Month",
+    "Week",
+    "Location",
+    "Property Type",
+    "Budget Range",
+    "Type"
+  ],
+  "filters": [
+    "Date range",
+    "Location",
+    "Property Type"
+  ],
+  "allowed_chart_types": [
+    "Bar",
+    "Line",
+    "Pie",
+    "Stacked Bar"
+  ],
+  "dashboards": [
+    {
+      "name": "Demand vs Supply",
+      "max_charts": 4,
+      "charts": [
+        {"title": "Buyers by Location", "type": "Bar", "source": "Clean Data"},
+        {"title": "Sellers by Location", "type": "Bar", "source": "Clean Data"},
+        {"title": "Demand-Supply Gap", "type": "Bar", "source": "Clean Data"},
+        {"title": "Demand by Budget", "type": "Stacked Bar", "source": "Clean Data"}
+      ]
+    },
+    {
+      "name": "Weekly Activity",
+      "max_charts": 4,
+      "charts": [
+        {"title": "Leads per Day", "type": "Line", "source": "Clean Data"},
+        {"title": "Buyer vs Seller", "type": "Pie", "source": "Clean Data"},
+        {"title": "Top Locations", "type": "Bar", "source": "Clean Data"},
+        {"title": "Matches per Day", "type": "Line", "source": "Matches"}
+      ]
+    },
+    {
+      "name": "Long-Term Trends",
+      "max_charts": 4,
+      "charts": [
+        {"title": "Monthly Buyer Trend", "type": "Line", "source": "Clean Data"},
+        {"title": "Monthly Seller Trend", "type": "Line", "source": "Clean Data"},
+        {"title": "Top Locations Over Time", "type": "Line", "source": "Clean Data"},
+        {"title": "Budget Trend", "type": "Stacked Bar", "source": "Clean Data"}
+      ]
+    }
+  ],
+  "notes": [
+    "Use only aggregated insights.",
+    "Pie charts are allowed for ratios only.",
+    "Stacked bars are allowed for distributions only.",
+    "Do not show individual leads.",
+    "Do not use the analytics layer as CRM or an operational workflow."
+  ]
+}

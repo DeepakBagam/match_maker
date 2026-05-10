@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+service-account.json
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+prefab-clover-*.json

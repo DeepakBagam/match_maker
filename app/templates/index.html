@@ -1,0 +1,2417 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Match Maker</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            outline: "#887369",
+            "on-surface-variant": "#55433a",
+            background: "#fff8f4",
+            primary: "#944512",
+            "primary-strong": "#CC703B",
+            "primary-soft": "#FFF1E7",
+            "surface-high": "#F7E5D7",
+            "surface-low": "#FFFAF7",
+            "on-surface": "#231A11",
+            surface: "#FFF8F4",
+            "on-background": "#231A11",
+            danger: "#B42318",
+            "danger-soft": "#FEF3F2",
+            grid: "#E9DED4",
+          },
+          fontFamily: {
+            inter: ["Inter", "sans-serif"],
+            mono: ["IBM Plex Mono", "monospace"],
+          },
+          boxShadow: {
+            warm: "0 10px 25px -5px rgba(74, 63, 53, 0.08), 0 8px 10px -6px rgba(74, 63, 53, 0.08)",
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    html {
+      scroll-behavior: smooth;
+    }
+
+    .material-symbols-outlined {
+      font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+    }
+
+    .tab-panel[hidden],
+    .app-view[hidden],
+    .modal[hidden] {
+      display: none;
+    }
+
+    body.grid-maximized {
+      overflow: hidden;
+    }
+
+    #dataGridSection.grid-maximized {
+      position: fixed;
+      inset: 16px;
+      z-index: 90;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      border-radius: 28px;
+      box-shadow: 0 20px 50px rgba(35, 26, 17, 0.18);
+    }
+
+    #dataGridSection.grid-maximized #dataTableWrap {
+      height: calc(100vh - 320px);
+      max-height: none;
+    }
+
+    .data-cell {
+      cursor: cell;
+      outline: none;
+    }
+
+    .data-cell:focus {
+      outline: none;
+    }
+
+    .data-cell-active {
+      position: relative;
+      background: #fff4cc !important;
+      box-shadow: inset 0 0 0 2px #cc703b;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-[#FDFBF7] font-inter text-on-background">
+  <header class="sticky top-0 z-50 border-b border-stone-200 bg-white/90 shadow-sm backdrop-blur-md">
+    <div class="flex w-full flex-col gap-4 px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-8">
+        <a class="text-xl font-black uppercase tracking-[0.22em] text-[#CC703B]" href="#" id="brandLink">Match Maker</a>
+        <nav class="flex items-center gap-2 rounded-full border border-[#E7D9CF] bg-[#FFF8F4] p-1">
+          <button class="view-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-view-target="ingestion-view" type="button">Ingestion</button>
+          <button class="view-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-view-target="data-view" type="button">Data</button>
+          <button class="view-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-view-target="glide-view" type="button">Glide</button>
+        </nav>
+      </div>
+      <div class="flex items-center gap-3">
+        <button class="rounded-lg bg-[#CC703B] px-4 py-2 text-sm font-semibold text-white transition-transform active:scale-95" id="processAllBtn" type="button">
+          Process All
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-[1800px] px-6 py-8">
+    <section class="app-view" id="ingestion-view">
+      <section class="mb-8" id="dashboard">
+        <h1 class="mb-1 text-3xl font-bold tracking-tight text-on-surface">Ingestion Dashboard</h1>
+        <p class="text-sm text-on-surface-variant">Streamline your data flow from WhatsApp exports to structured leads.</p>
+      </section>
+
+      <section class="relative mb-8 h-64 overflow-hidden rounded-xl border border-[#E3DCD5] bg-gradient-to-br from-[#FFF4EC] via-[#FCF7F1] to-[#F3ECE4] shadow-warm">
+        <div class="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(204,112,59,0.12),transparent_28%),radial-gradient(circle_at_80%_30%,rgba(148,69,18,0.10),transparent_22%),linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.7)_100%)]"></div>
+        <div class="absolute inset-0 grid grid-cols-3 gap-4 p-6 opacity-30">
+          <div class="rounded-xl border border-white/60 bg-white/50"></div>
+          <div class="rounded-xl border border-white/60 bg-white/40"></div>
+          <div class="rounded-xl border border-white/60 bg-white/50"></div>
+          <div class="col-span-2 rounded-xl border border-white/60 bg-white/40"></div>
+          <div class="rounded-xl border border-white/60 bg-white/55"></div>
+        </div>
+        <div class="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-t from-white/85 to-transparent px-6 text-center">
+          <span class="mb-2 text-lg font-bold text-primary">Operational Suite Ready</span>
+          <p class="max-w-xl text-sm text-on-surface-variant">
+            Select an ingestion method below to begin processing chat data into your operational layers.
+          </p>
+        </div>
+      </section>
+
+      <section class="grid grid-cols-1 gap-5 md:grid-cols-3">
+        <form class="flex flex-col rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm transition-all hover:shadow-lg" id="fileForm">
+          <div class="mb-4 flex items-start justify-between">
+            <div>
+              <h2 class="text-xl font-semibold text-on-surface">WhatsApp Upload</h2>
+              <span class="mt-2 inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">BULK READY</span>
+            </div>
+            <span class="material-symbols-outlined text-outline">upload_file</span>
+          </div>
+          <p class="mb-6 text-sm text-on-surface-variant">Upload a single export, many files, or one folder containing dozens of .txt chat exports.</p>
+
+          <div class="flex-grow space-y-4">
+            <div class="space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="file-source">Source</label>
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="file-source" name="source" placeholder="Optional for one file only" type="text" />
+            </div>
+
+            <div class="space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="file-upload">Files</label>
+              <div class="rounded-xl border-2 border-dashed border-[#E3DCD5] p-4 transition-colors hover:bg-[#FCF8F4]">
+                <label class="flex cursor-pointer flex-col items-center justify-center gap-3 text-center" for="file-upload">
+                  <span class="material-symbols-outlined text-outline">cloud_upload</span>
+                  <div>
+                    <div class="font-bold text-primary">Choose Files</div>
+                    <div class="text-xs text-on-surface-variant">Select one or more chat export files</div>
+                  </div>
+                </label>
+                <input class="mt-3 w-full text-sm" id="file-upload" name="file" accept=".txt" multiple required type="file" />
+              </div>
+            </div>
+
+            <div class="space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="folder-upload">Folder</label>
+              <div class="rounded-xl border-2 border-dashed border-[#E3DCD5] p-4 transition-colors hover:bg-[#FCF8F4]">
+                <label class="flex cursor-pointer flex-col items-center justify-center gap-3 text-center" for="folder-upload">
+                  <span class="material-symbols-outlined text-outline">folder_open</span>
+                  <div>
+                    <div class="font-bold text-primary">Choose Folder</div>
+                    <div class="text-xs text-on-surface-variant">Upload 50-60 exports in one go</div>
+                  </div>
+                </label>
+                <input class="mt-3 w-full text-sm" id="folder-upload" name="file" accept=".txt,text/plain" directory multiple webkitdirectory type="file" />
+              </div>
+            </div>
+
+            <p class="text-xs text-on-surface-variant">For multiple files, Match Maker uses the filename or folder path automatically as the source.</p>
+          </div>
+
+          <button class="mt-6 w-full rounded-lg bg-[#CC703B] py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#B35D29] active:scale-95" type="submit">
+            Process Upload
+          </button>
+        </form>
+
+        <form class="flex flex-col rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm transition-all hover:shadow-lg" id="pasteForm">
+          <div class="mb-4 flex items-start justify-between">
+            <div>
+              <h2 class="text-xl font-semibold text-on-surface">Paste Chat Data</h2>
+              <span class="mt-2 inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">FLEXIBLE</span>
+            </div>
+            <span class="material-symbols-outlined text-outline">content_paste</span>
+          </div>
+          <p class="mb-6 text-sm text-on-surface-variant">Paste a single group export directly, or combine multiple groups with Source: markers.</p>
+
+          <div class="flex-grow space-y-4">
+            <div class="space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="paste-source">Source</label>
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="paste-source" name="source" type="text" value="WhatsApp Group" />
+            </div>
+
+            <div class="space-y-2 h-full">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="chat-text">Combined Chat Text</label>
+              <textarea class="h-[220px] w-full resize-none rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="chat-text" name="chat_text" placeholder="Source: Group Alpha&#10;01/04/2026, 10:30 am - Alice: Need 2 bhk in wakad&#10;&#10;Source: Group Beta&#10;01/04/2026, 10:35 am - Bob: 2bhk flat available wakad 75L" required rows="8"></textarea>
+            </div>
+          </div>
+
+          <button class="mt-6 w-full rounded-lg bg-[#CC703B] py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#B35D29] active:scale-95" type="submit">
+            Process Paste
+          </button>
+        </form>
+
+        <form class="flex flex-col rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm transition-all hover:shadow-lg" id="manualForm">
+          <div class="mb-4 flex items-start justify-between">
+            <div>
+              <h2 class="text-xl font-semibold text-on-surface">Manual Lead Entry</h2>
+              <span class="mt-2 inline-block rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">DIRECT ENTRY</span>
+            </div>
+            <span class="material-symbols-outlined text-outline">person_add</span>
+          </div>
+          <p class="mb-6 text-sm text-on-surface-variant">Use the same fields supported by the manual ingestion endpoint: name, phone, requirement, location, budget, notes, and source.</p>
+
+          <div class="grid flex-grow grid-cols-2 gap-4 content-start">
+            <div class="space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="manual-name">Name</label>
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="manual-name" name="name" placeholder="Rahul" required type="text" />
+            </div>
+            <div class="space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="manual-phone">Phone</label>
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="manual-phone" name="phone" placeholder="9876543210" type="tel" />
+            </div>
+            <div class="col-span-2 space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="manual-requirement">Requirement</label>
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="manual-requirement" name="requirement" placeholder="Need 2 bhk in Wakad budget 70-80L" required type="text" />
+            </div>
+            <div class="space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="manual-location">Location</label>
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="manual-location" name="location" placeholder="Wakad" type="text" />
+            </div>
+            <div class="space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="manual-budget">Budget</label>
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="manual-budget" name="budget" placeholder="70L-80L" type="text" />
+            </div>
+            <div class="col-span-2 space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="manual-notes">Notes</label>
+              <textarea class="w-full resize-none rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="manual-notes" name="notes" placeholder="Optional context or broker notes" rows="3"></textarea>
+            </div>
+            <div class="col-span-2 space-y-2">
+              <label class="block text-xs font-semibold text-on-surface-variant" for="manual-source">Source</label>
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="manual-source" name="source" placeholder="Manual" type="text" value="Manual" />
+            </div>
+          </div>
+
+          <button class="mt-6 w-full rounded-lg bg-[#CC703B] py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#B35D29] active:scale-95" type="submit">
+            Submit Lead
+          </button>
+        </form>
+      </section>
+
+      <section class="mt-8">
+        <div class="mb-5 flex flex-wrap gap-3">
+          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="dashboard-tab" type="button">Dashboard</button>
+          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="settings-tab" type="button">Settings</button>
+          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="control-tab" type="button">Control Layer</button>
+          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="run-log-tab" type="button">Run Log</button>
+          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="docs-tab" type="button">Documentation</button>
+          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="support-tab" type="button">Support</button>
+        </div>
+
+        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="dashboard-tab">
+          <div class="grid gap-4 md:grid-cols-3">
+            <div class="rounded-xl bg-[#FFF8F4] p-4">
+              <h3 class="mb-2 text-sm font-semibold text-on-surface">WhatsApp Upload</h3>
+              <p class="text-sm text-on-surface-variant">Use this when you have one file, many files, or a full folder of exported chat `.txt` files.</p>
+            </div>
+            <div class="rounded-xl bg-[#FFF8F4] p-4">
+              <h3 class="mb-2 text-sm font-semibold text-on-surface">Paste Chat Data</h3>
+              <p class="text-sm text-on-surface-variant">Use this when you want to paste one group or multiple `Source:` blocks directly.</p>
+            </div>
+            <div class="rounded-xl bg-[#FFF8F4] p-4">
+              <h3 class="mb-2 text-sm font-semibold text-on-surface">Manual Lead Entry</h3>
+              <p class="text-sm text-on-surface-variant">Use this when you want to directly submit `name`, `phone`, `requirement`, `location`, `budget`, `notes`, and `source`.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="settings-tab" hidden>
+          <div class="mb-6 flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-semibold text-on-surface">System Settings</h2>
+              <p class="text-sm text-on-surface-variant">Configure matching, deduplication, and processing parameters</p>
+            </div>
+            <span class="material-symbols-outlined text-outline">settings</span>
+          </div>
+
+          <form id="settingsForm" class="space-y-6">
+            <div class="grid gap-6 md:grid-cols-2">
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="match_threshold">Match Threshold</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="match_threshold" name="match_threshold" type="number" min="0" max="100" value="40" />
+                <p class="text-xs text-on-surface-variant">Minimum score (0-100) for buyer-seller matches to appear. Lower = more matches, higher = stronger matches only.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="dedup_window_days">Dedup Window (Days)</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="dedup_window_days" name="dedup_window_days" type="number" min="0" max="30" value="1" />
+                <p class="text-xs text-on-surface-variant">How many days to consider duplicate messages. 0 = no dedup, 1 = same day, 7 = within week.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="lookback_days">Lookback Days</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="lookback_days" name="lookback_days" type="number" min="0" max="365" value="0" />
+                <p class="text-xs text-on-surface-variant">Only process messages from last N days. 0 = process all messages.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="top_leads_count">Top Leads Count</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="top_leads_count" name="top_leads_count" type="number" min="5" max="100" value="10" />
+                <p class="text-xs text-on-surface-variant">Number of top prioritized leads to show.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="top_leads_validation_size">Top Leads Validation Size</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="top_leads_validation_size" name="top_leads_validation_size" type="number" min="5" max="100" value="10" />
+                <p class="text-xs text-on-surface-variant">Number of top leads to show in validation checkpoint for review.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="glide_activity_window_days">Glide Activity Window (Days)</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="glide_activity_window_days" name="glide_activity_window_days" type="number" min="1" max="365" value="120" />
+                <p class="text-xs text-on-surface-variant">Lead must be active within this many days to qualify for Glide Today.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="glide_recent_interaction_days">Glide Recent Interaction (Days)</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="glide_recent_interaction_days" name="glide_recent_interaction_days" type="number" min="1" max="365" value="30" />
+                <p class="text-xs text-on-surface-variant">Recent interaction boolean is TRUE only within this DB-controlled window.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="glide_priority_qualified_score">Glide Priority Qualified Score</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="glide_priority_qualified_score" name="glide_priority_qualified_score" type="number" min="0" max="100" value="60" />
+                <p class="text-xs text-on-surface-variant">Priority-qualified boolean is TRUE only when Priority Score meets this threshold.</p>
+              </div>
+            </div>
+
+            <div class="flex gap-3">
+              <button type="submit" class="rounded-lg bg-[#CC703B] px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#B35D29] active:scale-95">
+                Save Settings
+              </button>
+              <button type="button" id="loadSettingsBtn" class="rounded-lg border border-[#E3DCD5] bg-white px-6 py-2.5 text-sm font-semibold text-on-surface shadow-sm transition-all hover:bg-[#FFF8F4] active:scale-95">
+                Load Current
+              </button>
+              <button type="button" id="resetSettingsBtn" class="rounded-lg border border-[#E3DCD5] bg-white px-6 py-2.5 text-sm font-semibold text-on-surface shadow-sm transition-all hover:bg-[#FFF8F4] active:scale-95">
+                Reset to Default
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="control-tab" hidden>
+          <div class="mb-4 flex items-center justify-between">
+            <div>
+              <h2 class="text-xl font-semibold text-on-surface">Control Layer</h2>
+              <p class="text-sm text-on-surface-variant">The runtime logic is controlled through database tables, not through dummy UI pages.</p>
+            </div>
+            <span class="material-symbols-outlined text-outline">tune</span>
+          </div>
+          <div class="grid gap-4 md:grid-cols-3">
+            <div class="rounded-xl bg-[#FFF8F4] p-4">
+              <h3 class="mb-2 text-sm font-semibold text-on-surface">Config</h3>
+              <p class="text-sm text-on-surface-variant">Controls `lookback_days`, `match_threshold`, `dedup_window_days`, and validation sample sizes.</p>
+            </div>
+            <div class="rounded-xl bg-[#FFF8F4] p-4">
+              <h3 class="mb-2 text-sm font-semibold text-on-surface">Location Mapping</h3>
+              <p class="text-sm text-on-surface-variant">Maps raw area names into canonical locations using aliases and optional tags.</p>
+            </div>
+            <div class="rounded-xl bg-[#FFF8F4] p-4">
+              <h3 class="mb-2 text-sm font-semibold text-on-surface">Property Mapping</h3>
+              <p class="text-sm text-on-surface-variant">Normalizes property terms such as flat, apartment, office, or commercial labels.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="docs-tab" hidden>
+          <div class="mb-4 flex items-center gap-3">
+            <span class="material-symbols-outlined text-[#CC703B]">menu_book</span>
+            <h2 class="text-xl font-semibold text-on-surface">Documentation</h2>
+          </div>
+          <ul class="space-y-2 text-sm text-on-surface-variant">
+            <li>WhatsApp upload accepts one or more `.txt` files using the same `file` field.</li>
+            <li>Folder upload works in browsers that support directory selection.</li>
+            <li>Manual entry sends `name`, `phone`, `requirement`, `location`, `budget`, `notes`, and `source`.</li>
+            <li>Data management reads directly from the database structured dataset.</li>
+          </ul>
+        </div>
+
+        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="support-tab" hidden>
+          <div class="mb-4 flex items-center gap-3">
+            <span class="material-symbols-outlined text-[#CC703B]">support</span>
+            <h2 class="text-xl font-semibold text-on-surface">Support</h2>
+          </div>
+          <ul class="space-y-2 text-sm text-on-surface-variant">
+            <li>If uploads fail, check that the file extension is `.txt`.</li>
+            <li>If writes fail, inspect the Last Response panel for the database error.</li>
+            <li>If data view is empty, process or sync a dataset first.</li>
+            <li>Use the Last Response panel below to inspect API status and error details.</li>
+          </ul>
+        </div>
+
+        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="run-log-tab" hidden>
+          <div class="mb-4 flex items-center justify-between gap-4">
+            <div>
+              <div class="flex items-center gap-3">
+                <span class="material-symbols-outlined text-[#CC703B]">history</span>
+                <h2 class="text-xl font-semibold text-on-surface">Run Log</h2>
+              </div>
+              <p class="mt-2 text-sm text-on-surface-variant">Track all pipeline execution runs with detailed metrics and status.</p>
+            </div>
+            <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="refreshRunLogBtn" type="button">Refresh</button>
+          </div>
+          
+          <div class="overflow-x-auto rounded-2xl border border-grid bg-[#FFFCFA]">
+            <table class="min-w-full text-left text-sm">
+              <thead class="bg-[#F7EAE0] text-xs font-bold uppercase tracking-[0.14em] text-on-surface">
+                <tr>
+                  <th class="border-b border-r border-grid px-4 py-3">Run ID</th>
+                  <th class="border-b border-r border-grid px-4 py-3">Start Time</th>
+                  <th class="border-b border-r border-grid px-4 py-3">End Time</th>
+                  <th class="border-b border-r border-grid px-4 py-3">Duration</th>
+                  <th class="border-b border-r border-grid px-4 py-3">Processed</th>
+                  <th class="border-b border-r border-grid px-4 py-3">New</th>
+                  <th class="border-b border-r border-grid px-4 py-3">Duplicates</th>
+                  <th class="border-b border-r border-grid px-4 py-3">Ignored</th>
+                  <th class="border-b border-r border-grid px-4 py-3">Matches</th>
+                  <th class="border-b border-r border-grid px-4 py-3">Status</th>
+                  <th class="border-b border-grid px-4 py-3">Error</th>
+                </tr>
+              </thead>
+              <tbody id="runLogTableBody">
+                <tr>
+                  <td class="px-4 py-10 text-center text-sm text-on-surface-variant" colspan="11">Loading run log...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="mt-4 flex items-center justify-between gap-3">
+            <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="prevRunLogPageBtn" type="button">Previous</button>
+            <div class="text-sm text-on-surface-variant" id="runLogPageMeta">Showing 0 to 0</div>
+            <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="nextRunLogPageBtn" type="button">Next</button>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <section class="app-view space-y-6" id="data-view" hidden>
+      <div class="rounded-[28px] border border-[#E6D7CC] bg-[linear-gradient(135deg,#FFF8F3_0%,#FFFFFF_42%,#FBF3EC_100%)] p-6 shadow-warm">
+        <div class="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div class="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+              <span class="material-symbols-outlined text-base">table_view</span>
+              Data Management
+            </div>
+            <h1 class="text-3xl font-black tracking-tight text-on-surface">Structured Dataset</h1>
+            <p class="mt-2 max-w-2xl text-sm text-on-surface-variant">Review your database data with a grid built for fast scanning, date filters, column filters, and workbook exports.</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" id="refreshDataBtn" type="button">
+              Refresh
+            </button>
+            <button class="rounded-lg bg-[#B42318] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#912018]" id="openClearModalBtn" type="button">
+              Clear Data
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm" id="dataGridSection">
+        <div class="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto]">
+          <div class="space-y-2">
+            <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" for="data-tab-select">Dataset</label>
+            <select class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="data-tab-select"></select>
+          </div>
+          <div class="space-y-2">
+            <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" for="data-page-size">Rows Per Page</label>
+            <select class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="data-page-size">
+              <option value="100">100</option>
+              <option value="250" selected>250</option>
+              <option value="500">500</option>
+            </select>
+          </div>
+          <div class="space-y-2">
+            <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" for="data-from-date">From Date</label>
+            <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="data-from-date" type="date" />
+          </div>
+          <div class="space-y-2">
+            <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" for="data-to-date">To Date</label>
+            <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="data-to-date" type="date" />
+          </div>
+          <button class="rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#B35D29]" id="applyDataFiltersBtn" type="button">
+            Apply Filters
+          </button>
+          <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" id="resetDataFiltersBtn" type="button">
+            Reset
+          </button>
+          <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" id="syncDataBtn" type="button">
+            Reload Store
+          </button>
+        </div>
+
+        <div class="mt-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <h2 class="text-lg font-semibold text-on-surface">Read-only Data Grid</h2>
+            <p class="text-sm text-on-surface-variant">Spreadsheet-style view with wrapped cells, visible headers, and per-column filters.</p>
+          </div>
+          <div class="flex flex-col gap-3 xl:items-end">
+            <div class="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em]">
+              <span class="rounded-full bg-[#FFF1E7] px-3 py-1 text-primary" id="dataCountBadge">0 rows</span>
+              <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-on-surface-variant" id="dataFilterBadge">No date filter</span>
+              <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-on-surface-variant" id="dataPageBadge">Page 1</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+              <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" id="maximizeGridBtn" type="button">
+                Maximize View
+              </button>
+              <label class="inline-flex items-center gap-2 rounded-full border border-[#E3DCD5] bg-[#FFFCFA] px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">
+                <input class="rounded border-[#D8C6BA] text-primary focus:ring-primary" id="showRawColumnsToggle" type="checkbox" />
+                Show raw text columns
+              </label>
+              <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" id="downloadTabBtn" type="button">
+                Download Tab Excel
+              </button>
+              <button class="rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#B35D29]" id="downloadAllBtn" type="button">
+                Download All Excel
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="mt-4 rounded-2xl border border-[#EAD8CB] bg-[#FFF9F5] px-4 py-3 text-sm text-on-surface-variant" id="dataStatusNote">
+          Load a dataset to start filtering columns and exporting Excel.
+        </div>
+
+        <div class="mt-5 overflow-hidden rounded-2xl border border-grid bg-[#FFFCFA]">
+          <div class="h-[76vh] min-h-[720px] overflow-auto" id="dataTableWrap">
+            <table class="min-w-full border-separate border-spacing-0 text-left text-sm" id="dataTable">
+              <thead class="sticky top-0 z-10 bg-[#F7EAE0] text-xs font-bold uppercase tracking-[0.14em] text-on-surface">
+                <tr>
+                  <th class="sticky left-0 z-20 border-b border-r border-grid bg-[#F3E3D6] px-4 py-3">#</th>
+                  <th class="border-b border-r border-grid px-4 py-3">Loading</th>
+                </tr>
+              </thead>
+              <tbody id="dataTableBody">
+                <tr>
+                  <td class="sticky left-0 border-r border-grid bg-white px-4 py-10 text-center text-xs font-semibold text-on-surface-variant">1</td>
+                  <td class="px-4 py-10 text-center text-sm text-on-surface-variant">Open the Data tab to load records.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="mt-4 flex items-center justify-between gap-3">
+          <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" id="prevPageBtn" type="button">
+            Previous
+          </button>
+          <div class="text-sm text-on-surface-variant" id="pageMeta">Showing 0 to 0</div>
+          <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" id="nextPageBtn" type="button">
+            Next
+          </button>
+        </div>
+      </section>
+    </section>
+
+    <section class="app-view space-y-6" id="glide-view" hidden>
+      <div class="rounded-[28px] border border-[#E6D7CC] bg-[linear-gradient(135deg,#FFF8F3_0%,#FFFFFF_42%,#FBF3EC_100%)] p-6 shadow-warm">
+        <div class="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div>
+            <div class="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+              <span class="material-symbols-outlined text-base">deployed_code</span>
+              Glide Workspace
+            </div>
+            <h1 class="text-3xl font-black tracking-tight text-on-surface">Glide Leads</h1>
+            <p class="mt-2 max-w-3xl text-sm text-on-surface-variant">Fast working view for active leads, lead detail, and execution updates.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" id="refreshGlideBtn" type="button">
+              Refresh Glide View
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <section class="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
+        <div class="space-y-6">
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm">
+            <div class="flex items-center justify-between gap-4">
+              <div>
+                <h2 class="text-xl font-semibold text-on-surface">Lead Queue</h2>
+                <p class="mt-1 text-sm text-on-surface-variant">Use the lists below to open a lead and work it immediately.</p>
+              </div>
+              <span class="rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">FAST MODE</span>
+            </div>
+            <div class="mt-4 grid gap-4 md:grid-cols-2">
+              <div class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="font-semibold text-on-surface">Today</h3>
+                <p class="mt-1 text-sm text-on-surface-variant">Active leads only. Search by name, area, or broker.</p>
+              </div>
+              <div class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="font-semibold text-on-surface">All Leads</h3>
+                <p class="mt-1 text-sm text-on-surface-variant">Full lead list when you need to go beyond today’s queue.</p>
+              </div>
+            </div>
+            <div class="mt-4 rounded-2xl border border-[#EAD8CB] bg-[#FFF9F5] px-4 py-3 text-sm text-on-surface-variant" id="glideStatusNote">
+              Loading Glide leads...
+            </div>
+            <div class="mt-4 rounded-2xl border border-[#E3DCD5] bg-white p-4" hidden>
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">Lead Inclusion Controls</h3>
+                  <p class="mt-1 text-sm text-on-surface-variant">Today inclusion is backend-only and controlled through DB config values.</p>
+                </div>
+                <button class="rounded-lg border border-[#E3DCD5] bg-white px-3 py-2 text-xs font-semibold text-on-surface hover:bg-[#FFF8F4]" id="refreshGlideFilterConfigBtn" type="button">Refresh Rule</button>
+              </div>
+              <div class="mt-3 grid gap-3 md:grid-cols-3">
+                <div class="rounded-2xl bg-[#FFF8F4] p-3">
+                  <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Activity Window</p>
+                  <p class="mt-1 text-sm font-semibold text-on-surface" id="glideFilterActivityWindow">-</p>
+                </div>
+                <div class="rounded-2xl bg-[#FFF8F4] p-3">
+                  <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Recent Interaction</p>
+                  <p class="mt-1 text-sm font-semibold text-on-surface" id="glideFilterRecentInteraction">-</p>
+                </div>
+                <div class="rounded-2xl bg-[#FFF8F4] p-3">
+                  <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Priority Threshold</p>
+                  <p class="mt-1 text-sm font-semibold text-on-surface" id="glideFilterPriorityThreshold">-</p>
+                </div>
+              </div>
+              <div class="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="glideFilterRuleText">
+                Include ONLY if activity window is TRUE and at least one of follow-up pending, priority qualified, or recent interaction is TRUE.
+              </div>
+            </div>
+            <div class="mt-4 grid gap-4 md:grid-cols-3" hidden>
+              <div class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="font-semibold text-on-surface">Glide_View</h3>
+                <p class="mt-1 text-sm text-on-surface-variant">DB-derived filtered dataset with precomputed match fields.</p>
+              </div>
+              <div class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="font-semibold text-on-surface">Deals Log</h3>
+                <p class="mt-1 text-sm text-on-surface-variant">Manual high-signal memory table for meaningful deal events only.</p>
+              </div>
+              <div class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="font-semibold text-on-surface">Alerts Leads</h3>
+                <p class="mt-1 text-sm text-on-surface-variant">Append-only website-capture table with `Timestamp`, `Contact`, `Source`.</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm">
+            <div class="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 class="text-xl font-semibold text-on-surface">Today</h2>
+                <p class="mt-1 text-sm text-on-surface-variant">Priority leads for immediate action.</p>
+              </div>
+              <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="glideTodayCount">0 leads</span>
+            </div>
+            <div class="mb-4">
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="glideTodaySearch" placeholder="Search Name, Area, Broker" type="search" />
+            </div>
+            <div class="space-y-3" id="glideTodayList"></div>
+          </section>
+
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm">
+            <div class="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 class="text-xl font-semibold text-on-surface">All Leads</h2>
+                <p class="mt-1 text-sm text-on-surface-variant">Broader list when you need to search outside the active queue.</p>
+              </div>
+              <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="glideAllCount">0 leads</span>
+            </div>
+            <div class="mb-4">
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="glideAllSearch" placeholder="Search Name, Area, Broker" type="search" />
+            </div>
+            <div class="space-y-3" id="glideAllList"></div>
+          </section>
+        </div>
+
+        <div class="space-y-6">
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm">
+            <div class="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 class="text-xl font-semibold text-on-surface">Lead Detail</h2>
+                <p class="mt-1 text-sm text-on-surface-variant">Focused execution view for the selected lead.</p>
+              </div>
+              <span class="rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary" id="glideDetailLeadId">No lead selected</span>
+            </div>
+
+            <div class="space-y-5" id="glideDetailWrap">
+              <section class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">1. Summary</h3>
+                <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Name</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailName">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Phone</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailPhone">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Area</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailArea">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Budget</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailBudget">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">BHK</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailBhk">-</p></div>
+                </div>
+              </section>
+
+              <section class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">2. Lead Quality</h3>
+                <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Priority</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailPriority">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Strength</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailStrength">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Last Interaction</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailLastInteraction">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Active Within Window</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailCalcActiveWindow">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Recent Interaction</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailCalcRecentInteraction">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Priority Qualified</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailCalcPriorityQualified">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Follow-up Pending</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailCalcFollowUpPending">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Included In Today</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailCalcInTodayView">-</p></div>
+                </div>
+              </section>
+
+              <section class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">3. Why This Lead</h3>
+                <div class="mt-3 grid gap-3">
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Match Count</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailMatchCount">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Best Match Summary</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailBestMatch">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Match Reason</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailMatchReason">-</p></div>
+                </div>
+              </section>
+
+              <section class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">4. Matching Properties</h3>
+                <div class="mt-3 space-y-3">
+                  <div class="rounded-2xl border border-[#E3DCD5] bg-white p-4">
+                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Block 1</p>
+                    <p class="mt-2 text-sm font-semibold text-on-surface" id="detailMatch1Summary">-</p>
+                    <p class="mt-1 text-sm text-on-surface-variant" id="detailMatch1Broker">-</p>
+                    <a class="mt-3 inline-flex rounded-lg bg-[#CC703B] px-3 py-2 text-xs font-semibold text-white" href="#" id="detailMatch1Call">Call Broker</a>
+                  </div>
+                  <div class="rounded-2xl border border-[#E3DCD5] bg-white p-4">
+                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Block 2</p>
+                    <p class="mt-2 text-sm font-semibold text-on-surface" id="detailMatch2Summary">-</p>
+                    <p class="mt-1 text-sm text-on-surface-variant" id="detailMatch2Broker">-</p>
+                    <a class="mt-3 inline-flex rounded-lg bg-[#CC703B] px-3 py-2 text-xs font-semibold text-white" href="#" id="detailMatch2Call">Call Broker</a>
+                  </div>
+                  <div class="rounded-2xl border border-[#E3DCD5] bg-white p-4">
+                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Block 3</p>
+                    <p class="mt-2 text-sm font-semibold text-on-surface" id="detailMatch3Summary">-</p>
+                    <p class="mt-1 text-sm text-on-surface-variant" id="detailMatch3Broker">-</p>
+                    <a class="mt-3 inline-flex rounded-lg bg-[#CC703B] px-3 py-2 text-xs font-semibold text-white" href="#" id="detailMatch3Call">Call Broker</a>
+                  </div>
+                </div>
+              </section>
+
+              <section class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">5. Execution</h3>
+                <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div class="space-y-2">
+                    <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailStatusInput">Status</label>
+                    <select class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="detailStatusInput">
+                      <option value="">Select status</option>
+                      <option value="NEW">NEW</option>
+                      <option value="CONTACTED">CONTACTED</option>
+                      <option value="FOLLOW_UP">FOLLOW_UP</option>
+                      <option value="QUALIFIED">QUALIFIED</option>
+                      <option value="CLOSED">CLOSED</option>
+                      <option value="LOST">LOST</option>
+                    </select>
+                  </div>
+                  <div class="space-y-2">
+                    <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailNextFollowUpInput">Next Follow-up</label>
+                    <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="detailNextFollowUpInput" type="date" />
+                  </div>
+                  <div class="space-y-2">
+                    <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailNextActionInput">Next Action</label>
+                    <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="detailNextActionInput" placeholder="e.g., Call, Site Visit, Send Docs" type="text" />
+                  </div>
+                  <div class="space-y-2">
+                    <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailTimingInput">Timing</label>
+                    <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="detailTimingInput" placeholder="e.g., Morning, 2-4 PM" type="text" />
+                  </div>
+                  <div class="space-y-2 sm:col-span-2">
+                    <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailNotesInput">Notes</label>
+                    <textarea class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="detailNotesInput" rows="4"></textarea>
+                  </div>
+                  <div class="sm:col-span-2 flex flex-wrap items-center gap-3">
+                    <button class="rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#B35D29]" id="saveGlideExecutionBtn" type="button">
+                      Save Execution
+                    </button>
+                    <span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="detailExecutionMeta">No execution updates yet.</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">6. Actions</h3>
+                <div class="mt-3 flex flex-wrap gap-3">
+                  <a class="inline-flex rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface" href="#" id="detailCallLead">Call Lead</a>
+                  <a class="inline-flex rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white" href="#" id="detailWhatsappLead">WhatsApp Lead</a>
+                </div>
+              </section>
+
+              <section class="rounded-2xl bg-[#FFF8F4] p-4">
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">7. Communication Templates</h3>
+                <p class="mt-2 text-sm text-on-surface-variant">Generate WhatsApp-ready messages from templates</p>
+                <div class="mt-3 space-y-3">
+                  <div class="space-y-2">
+                    <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailTemplateSelect">Template</label>
+                    <select class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="detailTemplateSelect">
+                      <option value="">Select template</option>
+                      <option value="welcome_message">Welcome Message</option>
+                      <option value="buyer_match_notification">Buyer Match Notification</option>
+                      <option value="follow_up_reminder">Follow-up Reminder</option>
+                    </select>
+                  </div>
+                  <button class="w-full rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#B35D29]" id="generateMessageBtn" type="button">
+                    Generate Message
+                  </button>
+                  <div class="rounded-2xl border border-[#E3DCD5] bg-white p-4" id="generatedMessageWrap" style="display: none;">
+                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Generated Message</p>
+                    <pre class="mt-2 whitespace-pre-wrap text-sm text-on-surface" id="generatedMessageText"></pre>
+                    <a class="mt-3 inline-flex rounded-lg bg-[#25D366] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#20BA5A]" href="#" id="sendWhatsappBtn" target="_blank">
+                      Send via WhatsApp
+                    </a>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm" hidden>
+            <h2 class="text-xl font-semibold text-on-surface">Readiness Checklist</h2>
+            <div class="mt-4 space-y-3" id="glideReadinessList"></div>
+          </section>
+
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm" hidden>
+            <h2 class="text-xl font-semibold text-on-surface">Field Ownership</h2>
+            <div class="mt-4 grid gap-4 md:grid-cols-2">
+              <div class="rounded-2xl bg-[#FFF8F4] p-4">
+                <p class="text-xs font-bold uppercase tracking-[0.14em] text-on-surface-variant">Computed / Read-only</p>
+                <ul class="mt-2 space-y-2 text-sm text-on-surface-variant" id="glideComputedFields"></ul>
+              </div>
+              <div class="rounded-2xl bg-[#FFF8F4] p-4">
+                <p class="text-xs font-bold uppercase tracking-[0.14em] text-on-surface-variant">Future Execution Fields</p>
+                <ul class="mt-2 space-y-2 text-sm text-on-surface-variant" id="glideExecutionFields"></ul>
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm" hidden>
+            <h2 class="text-xl font-semibold text-on-surface">Sync / Validation Rules</h2>
+            <ul class="mt-4 space-y-2 text-sm text-on-surface-variant" id="glideSyncRules"></ul>
+          </section>
+
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm" hidden>
+            <div class="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 class="text-xl font-semibold text-on-surface">Deals Log</h2>
+                <p class="mt-1 text-sm text-on-surface-variant">Append-only high-signal deal memory. Keep this table small and intentional.</p>
+              </div>
+              <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="refreshDealsLogBtn" type="button">Refresh</button>
+            </div>
+            <div class="grid gap-3 md:grid-cols-2">
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="dealsLeadIdInput" placeholder="Lead ID (optional)" type="text" />
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="dealsEventTypeInput" placeholder="Event Type" type="text" />
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="dealsStatusInput" placeholder="Deal Status" type="text" />
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="dealsCreatedByInput" placeholder="Created By" type="text" value="Glide" />
+              <textarea class="md:col-span-2 w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="dealsNotesInput" placeholder="High-signal notes" rows="3"></textarea>
+            </div>
+            <div class="mt-3 flex items-center gap-3">
+              <button class="rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#B35D29]" id="saveDealsLogBtn" type="button">Add Deal Log</button>
+              <span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="dealsLogMeta">No deal log action yet.</span>
+            </div>
+            <div class="mt-4 space-y-3" id="dealsLogList"></div>
+          </section>
+
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm" hidden>
+            <div class="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <h2 class="text-xl font-semibold text-on-surface">Alerts Leads</h2>
+                <p class="mt-1 text-sm text-on-surface-variant">Append-only website capture. Minimal contact only, stored separately from main leads.</p>
+              </div>
+              <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="refreshAlertsLeadsBtn" type="button">Refresh</button>
+            </div>
+            
+            <div class="mb-4 rounded-2xl border-2 border-[#CC703B] bg-[#FFF8F4] p-5">
+              <div class="mb-3 flex items-center gap-3">
+                <span class="material-symbols-outlined text-[#CC703B]">mail</span>
+                <h3 class="text-lg font-bold text-on-surface">Send Us An Email</h3>
+              </div>
+              <a href="mailto:contact@sheltersrealty.co.in" class="block w-full rounded-lg bg-[#CC703B] px-4 py-3 text-center text-base font-semibold text-white transition-colors hover:bg-[#B35D29]">
+                contact@sheltersrealty.co.in
+              </a>
+              <p class="mt-2 text-center text-xs text-on-surface-variant">Click to open your email client</p>
+            </div>
+            
+            <div class="flex flex-col gap-3 sm:flex-row">
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="alertsContactInput" placeholder="Email or Phone" type="text" />
+              <button class="rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#B35D29]" id="saveAlertsLeadBtn" type="button">Capture Alert</button>
+            </div>
+            <div class="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="alertsLeadsMeta">No alerts capture yet.</div>
+            <div class="mt-4 space-y-3" id="alertsLeadsList"></div>
+          </section>
+        </div>
+      </section>
+    </section>
+
+    <section class="mt-8 rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" id="response">
+      <div class="mb-4 flex items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-semibold text-on-surface">Activity Output</h2>
+          <p class="text-sm text-on-surface-variant">Request status and error details for ingestion and settings actions.</p>
+        </div>
+        <span class="rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold text-primary">LIVE OUTPUT</span>
+      </div>
+      <pre class="overflow-auto rounded-xl bg-[#211913] p-4 text-sm text-[#F7E7D5]" id="out">No requests yet.</pre>
+    </section>
+  </main>
+
+  <div class="modal fixed inset-0 z-[100] bg-[#2B211C]/55 px-4 py-6 backdrop-blur-sm" id="clearDataModal" hidden>
+    <div class="mx-auto max-w-2xl rounded-3xl border border-[#E7D9CF] bg-white shadow-2xl">
+      <div class="border-b border-[#F1E4DA] px-6 py-5">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-bold uppercase tracking-[0.16em] text-danger">Danger Zone</p>
+            <h2 class="mt-1 text-2xl font-bold text-on-surface">Clear Data</h2>
+            <p class="mt-2 text-sm text-on-surface-variant">This action is irreversible. Choose exactly what to remove, then type <span class="font-bold text-danger">CONFIRM</span> to continue.</p>
+          </div>
+          <button class="rounded-full border border-[#E3DCD5] p-2 text-on-surface-variant transition-colors hover:bg-[#FFF8F4]" id="closeClearModalBtn" type="button">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="space-y-6 px-6 py-6">
+        <div class="grid gap-4 md:grid-cols-2">
+          <label class="rounded-2xl border border-[#E3DCD5] bg-[#FFFCFA] p-4">
+            <input checked class="sr-only" name="clear-mode" type="radio" value="range" />
+            <div class="flex items-start gap-3">
+              <span class="mt-0.5 rounded-full bg-[#FFF1E7] p-2 text-primary">
+                <span class="material-symbols-outlined text-base">calendar_month</span>
+              </span>
+              <div>
+                <h3 class="font-semibold text-on-surface">Clear by Date Range</h3>
+                <p class="mt-1 text-sm text-on-surface-variant">Uses the selected From Date and To Date filters from the Data Tab.</p>
+              </div>
+            </div>
+          </label>
+          <label class="rounded-2xl border border-[#F4D3CF] bg-danger-soft p-4">
+            <input class="sr-only" name="clear-mode" type="radio" value="all" />
+            <div class="flex items-start gap-3">
+              <span class="mt-0.5 rounded-full bg-white p-2 text-danger">
+                <span class="material-symbols-outlined text-base">delete_forever</span>
+              </span>
+              <div>
+                <h3 class="font-semibold text-danger">Clear All Data</h3>
+                <p class="mt-1 text-sm text-[#7A271A]">Deletes the entire structured dataset and its related tracking records.</p>
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="rounded-2xl border border-[#F4D3CF] bg-danger-soft p-4 text-sm text-[#7A271A]">
+          <p class="font-semibold">Warning</p>
+          <p class="mt-1">This action is irreversible.</p>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-2">
+          <div class="space-y-2">
+            <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" for="modal-from-date">From Date</label>
+            <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="modal-from-date" type="date" />
+          </div>
+          <div class="space-y-2">
+            <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" for="modal-to-date">To Date</label>
+            <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="modal-to-date" type="date" />
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <label class="block text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" for="confirmClearText">Type CONFIRM to enable deletion</label>
+          <input class="w-full rounded-lg border-[#E3DCD5] bg-white font-mono text-sm uppercase tracking-[0.14em] focus:border-danger focus:ring-danger" id="confirmClearText" placeholder="CONFIRM" type="text" />
+        </div>
+
+        <p class="hidden rounded-2xl border px-4 py-3 text-sm font-medium" id="clearModalStatus"></p>
+      </div>
+
+      <div class="flex flex-col gap-3 border-t border-[#F1E4DA] px-6 py-5 sm:flex-row sm:justify-end">
+        <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" id="cancelClearDataBtn" type="button">
+          Cancel
+        </button>
+        <button class="rounded-lg bg-[#B42318] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#912018] disabled:cursor-not-allowed disabled:opacity-60" id="confirmClearDataBtn" type="button" disabled>
+          Confirm Deletion
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function activateTab(tabId) {
+      document.querySelectorAll("[data-tab-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.tabPanel !== tabId;
+      });
+
+      document.querySelectorAll(".tab-link").forEach((link) => {
+        const active = link.dataset.tabTarget === tabId;
+        link.classList.toggle("bg-[#CC703B]", active);
+        link.classList.toggle("text-white", active);
+        link.classList.toggle("shadow-sm", active);
+        link.classList.toggle("bg-white", !active);
+        link.classList.toggle("text-stone-600", !active);
+        link.classList.toggle("ring-1", !active);
+        link.classList.toggle("ring-[#E3DCD5]", !active);
+      });
+    }
+
+    function setView(viewId) {
+      document.querySelectorAll(".app-view").forEach((view) => {
+        view.hidden = view.id !== viewId;
+      });
+
+      document.querySelectorAll(".view-link").forEach((link) => {
+        const active = link.dataset.viewTarget === viewId;
+        link.classList.toggle("bg-[#CC703B]", active);
+        link.classList.toggle("text-white", active);
+        link.classList.toggle("shadow-sm", active);
+        link.classList.toggle("text-stone-600", !active);
+      });
+
+      const processAllBtn = document.getElementById("processAllBtn");
+      processAllBtn.hidden = viewId === "data-view" || viewId === "glide-view";
+      document.getElementById("response").hidden = viewId === "data-view" || viewId === "glide-view";
+
+      if (viewId === "data-view") {
+        loadData();
+      }
+      if (viewId === "glide-view" && (!glideState.loaded || glideState.needsRefresh)) {
+        loadGlideView(glideState.needsRefresh);
+      }
+    }
+
+    function formatJobKind(kind) {
+      const labels = {
+        "whatsapp-file": "WhatsApp file upload",
+        "whatsapp-paste": "pasted chat data",
+        "manual-entry": "manual lead entry",
+      };
+      return labels[kind] || "request";
+    }
+
+    function summarizeResult(result) {
+      if (!result || typeof result !== "object") {
+        return "";
+      }
+
+      const parts = [];
+      if (typeof result.processed === "number") {
+        parts.push(`${result.processed} row${result.processed === 1 ? "" : "s"} processed`);
+      }
+      if (typeof result.new_rows === "number") {
+        parts.push(`${result.new_rows} new`);
+      }
+      if (typeof result.duplicates === "number" && result.duplicates > 0) {
+        parts.push(`${result.duplicates} duplicate${result.duplicates === 1 ? "" : "s"} skipped`);
+      }
+      if (typeof result.ignored === "number" && result.ignored > 0) {
+        parts.push(`${result.ignored} ignored`);
+      }
+      if (typeof result.matches === "number") {
+        parts.push(`${result.matches} match${result.matches === 1 ? "" : "es"} found`);
+      }
+      return parts.join(" | ");
+    }
+
+    function formatResponseMessage(status, body) {
+      if (!body || typeof body !== "object") {
+        return `Request finished with status ${status}.`;
+      }
+
+      if (body.job_id && body.status) {
+        const kind = formatJobKind(body.kind);
+        if (body.status === "queued") {
+          return `${kind} has been queued. Processing will start shortly.`;
+        }
+        if (body.status === "running") {
+          return `${kind} is currently running. Please wait while the data is being processed.`;
+        }
+        if (body.status === "success") {
+          const summary = summarizeResult(body.result);
+          return summary
+            ? `${kind} completed successfully. ${summary}.`
+            : `${kind} completed successfully.`;
+        }
+        if (body.status === "failure") {
+          return `${kind} failed. ${body.error_message || "Please review the input and try again."}`;
+        }
+      }
+
+      if (body.message && body.result) {
+        const summary = summarizeResult(body.result);
+        return summary ? `${body.message}. ${summary}.` : `${body.message}.`;
+      }
+
+      if (body.detail) {
+        return `Request failed: ${body.detail}`;
+      }
+
+      if (body.message) {
+        return String(body.message);
+      }
+
+      return JSON.stringify(body, null, 2);
+    }
+
+    function writeResponse(status, body) {
+      const out = document.getElementById("out");
+      out.textContent = formatResponseMessage(status, body);
+      document.getElementById("response").scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function stopJobPolling() {
+      if (jobState.pollHandle) {
+        window.clearTimeout(jobState.pollHandle);
+        jobState.pollHandle = null;
+      }
+    }
+
+    async function pollJob(jobId) {
+      const res = await fetch(`/jobs/${encodeURIComponent(jobId)}`);
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        stopJobPolling();
+        writeResponse(res.status, body);
+        return;
+      }
+
+      if (body.status !== jobState.lastStatus || body.status === "success" || body.status === "failure") {
+        writeResponse(res.status, body);
+        jobState.lastStatus = body.status || "";
+      }
+
+      if (body.status === "queued" || body.status === "running") {
+        jobState.pollHandle = window.setTimeout(() => {
+          pollJob(jobId);
+        }, 1000);
+        return;
+      }
+
+      stopJobPolling();
+      if (body.status === "success") {
+        glideState.needsRefresh = true;
+        await loadRunLog();
+        if (!document.getElementById("data-view").hidden) {
+          await loadData();
+        }
+        if (!document.getElementById("glide-view").hidden) {
+          await loadGlideView(true);
+        }
+      }
+    }
+
+    function trackJob(jobId) {
+      stopJobPolling();
+      jobState.activeJobId = jobId;
+      jobState.lastStatus = "";
+      pollJob(jobId);
+    }
+
+    async function submitForm(formId, endpoint) {
+      const form = document.getElementById(formId);
+      if (!form) {
+        return;
+      }
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const out = document.getElementById("out");
+        out.textContent = "Queueing...";
+        try {
+          const data = new FormData(form);
+          data.set("background", "true");
+          const res = await fetch(endpoint, { method: "POST", body: data });
+          const body = await res.json().catch(() => ({}));
+          writeResponse(res.status, body);
+          if (res.status === 202 && body.job_id) {
+            glideState.needsRefresh = true;
+            trackJob(body.job_id);
+          }
+        } catch (error) {
+          writeResponse(500, {
+            detail: error instanceof Error ? error.message : "Request failed before the server could respond.",
+          });
+        }
+      });
+    }
+
+    function hasSelectedFiles(inputId) {
+      const input = document.getElementById(inputId);
+      return Boolean(input && input.files && input.files.length > 0);
+    }
+
+    function hasTextValue(inputId) {
+      const input = document.getElementById(inputId);
+      return Boolean(input && input.value && input.value.trim());
+    }
+
+    const dataState = {
+      loaded: false,
+      gridMaximized: false,
+      activeCell: { row: 0, col: 0 },
+      tab: "Structured Data",
+      fromDate: "",
+      toDate: "",
+      pageSize: 250,
+      offset: 0,
+      totalRows: 0,
+      lastPayload: null,
+      showRawColumns: false,
+      columnFilters: {},
+    };
+
+    const runLogState = {
+      offset: 0,
+      pageSize: 50,
+      totalRows: 0,
+    };
+
+    const jobState = {
+      activeJobId: "",
+      pollHandle: null,
+      lastStatus: "",
+    };
+
+    const glideState = {
+      todayRows: [],
+      allRows: [],
+      selectedLeadId: "",
+      selectedDetail: null,
+      dealsLogRows: [],
+      alertsLeadRows: [],
+      filterConfig: null,
+      todaySearch: "",
+      allSearch: "",
+      readiness: null,
+      loaded: false,
+      loading: false,
+      needsRefresh: true,
+      todaySearchHandle: null,
+      allSearchHandle: null,
+    };
+
+    function getFilenameFromDisposition(headerValue, fallbackName) {
+      const match = headerValue && headerValue.match(/filename=\"?([^\";]+)\"?/i);
+      return match ? match[1] : fallbackName;
+    }
+
+    function escapeAttribute(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;");
+    }
+
+    function updateGridMaximizeButton() {
+      const button = document.getElementById("maximizeGridBtn");
+      button.textContent = dataState.gridMaximized ? "Exit Maximize" : "Maximize View";
+    }
+
+    function toggleGridMaximized() {
+      dataState.gridMaximized = !dataState.gridMaximized;
+      document.body.classList.toggle("grid-maximized", dataState.gridMaximized);
+      document.getElementById("dataGridSection").classList.toggle("grid-maximized", dataState.gridMaximized);
+      updateGridMaximizeButton();
+    }
+
+    function getGridCells() {
+      return Array.from(document.querySelectorAll("#dataTable td.data-cell"));
+    }
+
+    function getCellByCoordinates(row, col) {
+      return document.querySelector(`#dataTable td.data-cell[data-row-index="${row}"][data-col-index="${col}"]`);
+    }
+
+    function setActiveCell(row, col, options = {}) {
+      const cells = getGridCells();
+      if (!cells.length) {
+        return;
+      }
+
+      const maxRow = Math.max(...cells.map((cell) => Number(cell.dataset.rowIndex)));
+      const maxCol = Math.max(...cells.map((cell) => Number(cell.dataset.colIndex)));
+      const nextRow = Math.max(0, Math.min(row, maxRow));
+      const nextCol = Math.max(0, Math.min(col, maxCol));
+      const targetCell = getCellByCoordinates(nextRow, nextCol);
+      if (!targetCell) {
+        return;
+      }
+
+      dataState.activeCell = { row: nextRow, col: nextCol };
+      cells.forEach((cell) => {
+        cell.classList.remove("data-cell-active");
+        cell.tabIndex = -1;
+      });
+      targetCell.classList.add("data-cell-active");
+      targetCell.tabIndex = 0;
+      if (options.focus !== false) {
+        targetCell.focus({ preventScroll: Boolean(options.preventScroll) });
+      }
+      if (options.scroll !== false) {
+        targetCell.scrollIntoView({ block: "nearest", inline: "nearest" });
+      }
+    }
+
+    function moveActiveCell(rowDelta, colDelta) {
+      setActiveCell(dataState.activeCell.row + rowDelta, dataState.activeCell.col + colDelta);
+    }
+
+    function handleGridCellKeydown(event) {
+      if (!event.target.classList.contains("data-cell")) {
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        moveActiveCell(-1, 0);
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        moveActiveCell(1, 0);
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        moveActiveCell(0, -1);
+        return;
+      }
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        moveActiveCell(0, 1);
+        return;
+      }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        moveActiveCell(event.shiftKey ? -1 : 1, 0);
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        moveActiveCell(0, event.shiftKey ? -1 : 1);
+      }
+    }
+
+    function initializeCellNavigation() {
+      const cells = getGridCells();
+      cells.forEach((cell) => {
+        cell.tabIndex = -1;
+        cell.addEventListener("click", () => {
+          setActiveCell(Number(cell.dataset.rowIndex), Number(cell.dataset.colIndex), { scroll: false });
+        });
+        cell.addEventListener("focus", () => {
+          setActiveCell(Number(cell.dataset.rowIndex), Number(cell.dataset.colIndex), { focus: false, scroll: false });
+        });
+        cell.addEventListener("keydown", handleGridCellKeydown);
+      });
+
+      if (cells.length) {
+        setActiveCell(dataState.activeCell.row, dataState.activeCell.col, { focus: false, scroll: false });
+      }
+    }
+
+    const verboseColumns = new Set([
+      "Raw Message",
+      "Cleaned Message",
+      "Lead Summary",
+      "Priority Reason",
+      "Match Reason",
+      "Notes",
+    ]);
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function normalizeText(value) {
+      return String(value ?? "").trim().toLowerCase();
+    }
+
+    function shouldShowColumn(column) {
+      if (dataState.showRawColumns || dataState.tab === "Raw Data") {
+        return true;
+      }
+      return !verboseColumns.has(column);
+    }
+
+    function getVisibleColumns(columns) {
+      return columns.filter((column) => shouldShowColumn(column));
+    }
+
+    function getFilteredRows(rows, columns) {
+      return rows.filter((row) =>
+        columns.every((column) => {
+          const filterValue = normalizeText(dataState.columnFilters[column] || "");
+          if (!filterValue) {
+            return true;
+          }
+          return normalizeText(row[column] || "").includes(filterValue);
+        })
+      );
+    }
+
+    function setDataStatus(message, tone = "neutral") {
+      const note = document.getElementById("dataStatusNote");
+      note.textContent = message;
+      note.className = "mt-4 rounded-2xl border px-4 py-3 text-sm";
+      if (tone === "error") {
+        note.classList.add("border-[#F4D3CF]", "bg-[#FFF3F1]", "text-[#8A2318]");
+        return;
+      }
+      if (tone === "success") {
+        note.classList.add("border-[#D8E7D6]", "bg-[#F5FBF3]", "text-[#265C2E]");
+        return;
+      }
+      note.classList.add("border-[#EAD8CB]", "bg-[#FFF9F5]", "text-on-surface-variant");
+    }
+
+    function setGlideStatus(message, tone = "neutral") {
+      const note = document.getElementById("glideStatusNote");
+      note.textContent = message;
+      note.className = "mt-4 rounded-2xl border px-4 py-3 text-sm";
+      if (tone === "error") {
+        note.classList.add("border-[#F4D3CF]", "bg-[#FFF3F1]", "text-[#8A2318]");
+        return;
+      }
+      if (tone === "success") {
+        note.classList.add("border-[#D8E7D6]", "bg-[#F5FBF3]", "text-[#265C2E]");
+        return;
+      }
+      note.classList.add("border-[#EAD8CB]", "bg-[#FFF9F5]", "text-on-surface-variant");
+    }
+
+    function renderGlideList(containerId, rows) {
+      const container = document.getElementById(containerId);
+      if (!rows.length) {
+        container.innerHTML = `<div class="rounded-2xl border border-dashed border-[#E3DCD5] bg-[#FFFCFA] px-4 py-8 text-center text-sm text-on-surface-variant">No Glide leads match the current search.</div>`;
+        return;
+      }
+      container.innerHTML = rows.map((row) => `
+        <button class="w-full rounded-2xl border border-[#E3DCD5] bg-[#FFFCFA] p-4 text-left transition-colors hover:bg-[#FFF6EF]" type="button" data-glide-lead-id="${escapeAttribute(row.lead_id)}">
+          <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div class="min-w-0">
+              <p class="text-base font-semibold text-on-surface">${escapeHtml(row.name || "Unnamed Lead")}</p>
+              <p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(row.area || "No Area")}${row.bhk ? ` | ${escapeHtml(row.bhk)} BHK` : ""}</p>
+              <p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(row.budget || "No Budget")}</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">${escapeHtml(row.priority || "UNRANKED")}</span>
+              <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row.match_count || "0")} matches</span>
+            </div>
+          </div>
+        </button>
+      `).join("");
+      container.querySelectorAll("[data-glide-lead-id]").forEach((button) => {
+        button.addEventListener("click", () => loadGlideLeadDetail(button.dataset.glideLeadId));
+      });
+    }
+
+    function normalizePhone(phone, allowPlus = false) {
+      const rawPhone = String(phone || "").trim();
+      if (!rawPhone) {
+        return "";
+      }
+
+      const digitsOnly = rawPhone.replace(/\D/g, "");
+      if (!digitsOnly) {
+        return "";
+      }
+
+      return allowPlus && rawPhone.startsWith("+") ? `+${digitsOnly}` : digitsOnly;
+    }
+
+    function setPhoneAction(linkId, phone, fallbackText) {
+      const link = document.getElementById(linkId);
+      const dialablePhone = normalizePhone(phone, true);
+      const displayPhone = normalizePhone(phone, false);
+
+      if (!dialablePhone) {
+        link.href = "javascript:void(0)";
+        link.classList.add("opacity-50", "pointer-events-none");
+        link.textContent = fallbackText;
+        link.onclick = (e) => { e.preventDefault(); return false; };
+        return;
+      }
+
+      link.href = `tel:${dialablePhone}`;
+      link.classList.remove("opacity-50", "pointer-events-none");
+      link.textContent = `${fallbackText} (${displayPhone})`;
+      link.onclick = null;
+    }
+
+    function renderGlideDetail(detail) {
+      glideState.selectedDetail = detail || null;
+      document.getElementById("glideDetailLeadId").textContent = detail ? detail.lead_id : "No lead selected";
+      document.getElementById("detailName").textContent = detail?.name || "-";
+      document.getElementById("detailPhone").textContent = detail?.phone || "-";
+      document.getElementById("detailArea").textContent = detail?.area || "-";
+      document.getElementById("detailBudget").textContent = detail?.budget || "-";
+      document.getElementById("detailBhk").textContent = detail?.bhk || "-";
+      document.getElementById("detailPriority").textContent = detail?.priority || "-";
+      document.getElementById("detailStrength").textContent = detail?.strength || "-";
+      document.getElementById("detailLastInteraction").textContent = detail?.last_interaction_date || "-";
+      document.getElementById("detailCalcActiveWindow").textContent = detail?.calc_active_within_120_days || "-";
+      document.getElementById("detailCalcRecentInteraction").textContent = detail?.calc_recent_interaction || "-";
+      document.getElementById("detailCalcPriorityQualified").textContent = detail?.calc_priority_qualified || "-";
+      document.getElementById("detailCalcFollowUpPending").textContent = detail?.calc_follow_up_pending || "-";
+      document.getElementById("detailCalcInTodayView").textContent = detail?.calc_in_today_view || "-";
+      document.getElementById("detailMatchCount").textContent = detail?.match_count || "0";
+      document.getElementById("detailBestMatch").textContent = detail?.best_match_summary || "-";
+      document.getElementById("detailMatchReason").textContent = detail?.match_reason || "-";
+      document.getElementById("detailStatusInput").value = detail?.status || "";
+      document.getElementById("detailNextFollowUpInput").value = detail?.next_follow_up || "";
+      document.getElementById("detailNextActionInput").value = detail?.next_action || "";
+      document.getElementById("detailTimingInput").value = detail?.timing || "";
+      document.getElementById("detailNotesInput").value = detail?.notes || "";
+      document.getElementById("detailExecutionMeta").textContent = detail?.updated_at
+        ? `Updated ${detail.updated_at}${detail.write_sync_error === "TRUE" ? " | Sync error flagged" : ""}`
+        : "No execution updates yet.";
+
+      document.getElementById("detailMatch1Summary").textContent = detail?.match_1_property_summary || "-";
+      document.getElementById("detailMatch1Broker").textContent = detail?.match_1_broker_name ? `${detail.match_1_broker_name} | ${detail.match_1_broker_phone || "No phone"}` : "-";
+      document.getElementById("detailMatch2Summary").textContent = detail?.match_2_property_summary || "-";
+      document.getElementById("detailMatch2Broker").textContent = detail?.match_2_broker_name ? `${detail.match_2_broker_name} | ${detail.match_2_broker_phone || "No phone"}` : "-";
+      document.getElementById("detailMatch3Summary").textContent = detail?.match_3_property_summary || "-";
+      document.getElementById("detailMatch3Broker").textContent = detail?.match_3_broker_name ? `${detail.match_3_broker_name} | ${detail.match_3_broker_phone || "No phone"}` : "-";
+
+      setPhoneAction("detailMatch1Call", detail?.match_1_broker_phone || "", "Call Broker");
+      setPhoneAction("detailMatch2Call", detail?.match_2_broker_phone || "", "Call Broker");
+      setPhoneAction("detailMatch3Call", detail?.match_3_broker_phone || "", "Call Broker");
+      setPhoneAction("detailCallLead", detail?.phone || "", "Call Lead");
+
+      const whatsapp = document.getElementById("detailWhatsappLead");
+      const whatsappPhone = normalizePhone(detail?.phone || "", false);
+      if (whatsappPhone) {
+        whatsapp.href = `https://wa.me/${whatsappPhone}`;
+        whatsapp.classList.remove("opacity-50", "pointer-events-none");
+      } else {
+        whatsapp.href = "#";
+        whatsapp.classList.add("opacity-50", "pointer-events-none");
+      }
+      
+      document.getElementById("generatedMessageWrap").style.display = "none";
+    }
+
+    async function saveGlideExecution() {
+      if (!glideState.selectedDetail?.lead_id) {
+        setGlideStatus("Select a Glide lead before saving execution fields.", "error");
+        return;
+      }
+      const payload = {
+        status: document.getElementById("detailStatusInput").value || "",
+        notes: document.getElementById("detailNotesInput").value || "",
+        next_follow_up: document.getElementById("detailNextFollowUpInput").value || null,
+        next_action: document.getElementById("detailNextActionInput").value || "",
+        timing: document.getElementById("detailTimingInput").value || "",
+      };
+      const res = await fetch(`/glide/view/${encodeURIComponent(glideState.selectedDetail.lead_id)}/execution`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGlideStatus(body.detail || "Failed to save Glide execution.", "error");
+        return;
+      }
+      renderGlideDetail(body.detail);
+      glideState.needsRefresh = true;
+      await loadGlideView(true);
+      setGlideStatus(body.message || "Glide execution updated successfully.", "success");
+    }
+
+    async function logGlideAction(action) {
+      if (!glideState.selectedDetail?.lead_id) {
+        return;
+      }
+      const res = await fetch(`/glide/view/${encodeURIComponent(glideState.selectedDetail.lead_id)}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok && body.detail) {
+        renderGlideDetail(body.detail);
+        glideState.needsRefresh = true;
+      } else if (!res.ok) {
+        setGlideStatus(body.detail || `Failed to log Glide ${action} action.`, "error");
+      }
+    }
+
+    function renderGlideReadiness(payload) {
+      glideState.readiness = payload;
+      document.getElementById("glideReadinessList").innerHTML = (payload.requirements || []).map((item) => `
+        <div class="rounded-2xl border border-[#E3DCD5] bg-[#FFFCFA] p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-sm font-semibold text-on-surface">${escapeHtml(item.label)}</p>
+            <span class="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${item.status === "ready" ? "bg-[#EAF6E7] text-[#265C2E]" : item.status === "partial" ? "bg-[#FFF1E7] text-primary" : "bg-[#FDECEC] text-danger"}">${escapeHtml(item.status)}</span>
+          </div>
+          <p class="mt-2 text-sm text-on-surface-variant">${escapeHtml(item.notes || "")}</p>
+        </div>
+      `).join("");
+      document.getElementById("glideComputedFields").innerHTML = (payload.field_ownership?.computed_read_only || []).map((field) => `<li>${escapeHtml(field)}</li>`).join("");
+      document.getElementById("glideExecutionFields").innerHTML = (payload.field_ownership?.future_execution_fields || []).map((field) => `<li>${escapeHtml(field)}</li>`).join("");
+      document.getElementById("glideSyncRules").innerHTML = (payload.sync_rules || []).map((rule) => `<li>${escapeHtml(rule)}</li>`).join("");
+      if (payload.filter_config) {
+        renderGlideFilterConfig(payload.filter_config);
+      }
+    }
+
+    function renderGlideFilterConfig(config) {
+      glideState.filterConfig = config;
+      document.getElementById("glideFilterActivityWindow").textContent = `${config.activity_window_days} days`;
+      document.getElementById("glideFilterRecentInteraction").textContent = `${config.recent_interaction_days} days`;
+      document.getElementById("glideFilterPriorityThreshold").textContent = `${config.priority_qualified_score}`;
+    }
+
+    function renderDealsLog(rows) {
+      const container = document.getElementById("dealsLogList");
+      if (!rows.length) {
+        container.innerHTML = `<div class="rounded-2xl border border-dashed border-[#E3DCD5] bg-[#FFFCFA] px-4 py-6 text-center text-sm text-on-surface-variant">No deal log entries yet.</div>`;
+        return;
+      }
+      container.innerHTML = rows.map((row) => `
+        <div class="rounded-2xl border border-[#E3DCD5] bg-[#FFFCFA] p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-sm font-semibold text-on-surface">${escapeHtml(row["Event_Type"] || "Event")}</p>
+            <span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row["Timestamp"] || "")}</span>
+          </div>
+          <p class="mt-1 text-sm text-on-surface-variant">Lead: ${escapeHtml(row["Lead_ID"] || "-")} | Status: ${escapeHtml(row["Deal_Status"] || "-")} | By: ${escapeHtml(row["Created_By"] || "-")}</p>
+          <p class="mt-2 text-sm text-on-surface">${escapeHtml(row["Notes"] || "")}</p>
+        </div>
+      `).join("");
+    }
+
+    function renderAlertsLeads(rows) {
+      const container = document.getElementById("alertsLeadsList");
+      if (!rows.length) {
+        container.innerHTML = `<div class="rounded-2xl border border-dashed border-[#E3DCD5] bg-[#FFFCFA] px-4 py-6 text-center text-sm text-on-surface-variant">No alerts leads captured yet.</div>`;
+        return;
+      }
+      container.innerHTML = rows.map((row) => `
+        <div class="rounded-2xl border border-[#E3DCD5] bg-[#FFFCFA] p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-sm font-semibold text-on-surface">${escapeHtml(row["Contact"] || "-")}</p>
+            <span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row["Timestamp"] || "")}</span>
+          </div>
+          <p class="mt-1 text-sm text-on-surface-variant">Source: ${escapeHtml(row["Source"] || "-")}</p>
+        </div>
+      `).join("");
+    }
+
+    async function loadGlideList(mode, search = "") {
+      const query = new URLSearchParams();
+      query.set("mode", mode);
+      query.set("limit", "50");
+      if (search.trim()) {
+        query.set("search", search.trim());
+      }
+      const res = await fetch(`/glide/view?${query.toString()}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.detail || "Failed to load Glide view.");
+      }
+      return body;
+    }
+
+    function applyGlideListPayload(mode, payload) {
+      const rows = payload.rows || [];
+      if (mode === "today") {
+        glideState.todayRows = rows;
+        document.getElementById("glideTodayCount").textContent = `${payload.row_count || 0} leads`;
+        renderGlideList("glideTodayList", rows);
+        return;
+      }
+      glideState.allRows = rows;
+      document.getElementById("glideAllCount").textContent = `${payload.row_count || 0} leads`;
+      renderGlideList("glideAllList", rows);
+    }
+
+    function scheduleGlideSearch(mode) {
+      const handleKey = mode === "today" ? "todaySearchHandle" : "allSearchHandle";
+      if (glideState[handleKey]) {
+        window.clearTimeout(glideState[handleKey]);
+      }
+      glideState[handleKey] = window.setTimeout(async () => {
+        try {
+          const payload = await loadGlideList(mode, mode === "today" ? glideState.todaySearch : glideState.allSearch);
+          applyGlideListPayload(mode, payload);
+          setGlideStatus("Glide list updated.", "success");
+        } catch (error) {
+          setGlideStatus(error instanceof Error ? error.message : "Failed to refresh Glide list.", "error");
+        }
+      }, 250);
+    }
+
+    async function loadGlideLeadDetail(leadId) {
+      const res = await fetch(`/glide/view/${encodeURIComponent(leadId)}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGlideStatus(body.detail || "Failed to load Glide lead detail.", "error");
+        return;
+      }
+      glideState.selectedLeadId = leadId;
+      renderGlideDetail(body);
+      setGlideStatus(`Loaded Glide detail for ${body.name || leadId}.`, "success");
+    }
+
+    async function loadGlideReadiness() {
+      const res = await fetch("/glide/readiness");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.detail || "Failed to load Glide readiness.");
+      }
+      renderGlideReadiness(body);
+    }
+
+    async function loadGlideFilterConfig() {
+      const res = await fetch("/glide/filter-config");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.detail || "Failed to load Glide filter config.");
+      }
+      renderGlideFilterConfig(body);
+    }
+
+    async function loadDealsLog() {
+      const res = await fetch("/glide/deals-log?limit=10");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.detail || "Failed to load deals log.");
+      }
+      glideState.dealsLogRows = body.rows || [];
+      renderDealsLog(glideState.dealsLogRows);
+    }
+
+    async function loadAlertsLeads() {
+      const res = await fetch("/glide/alerts-leads?limit=10");
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.detail || "Failed to load alerts leads.");
+      }
+      glideState.alertsLeadRows = body.rows || [];
+      renderAlertsLeads(glideState.alertsLeadRows);
+    }
+
+    async function saveDealsLog() {
+      const payload = {
+        lead_id: document.getElementById("dealsLeadIdInput").value || "",
+        event_type: document.getElementById("dealsEventTypeInput").value || "",
+        deal_status: document.getElementById("dealsStatusInput").value || "",
+        notes: document.getElementById("dealsNotesInput").value || "",
+        created_by: document.getElementById("dealsCreatedByInput").value || "Glide",
+      };
+      const res = await fetch("/glide/deals-log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGlideStatus(body.detail || "Failed to create deals log entry.", "error");
+        return;
+      }
+      document.getElementById("dealsEventTypeInput").value = "";
+      document.getElementById("dealsStatusInput").value = "";
+      document.getElementById("dealsNotesInput").value = "";
+      document.getElementById("dealsLogMeta").textContent = "Deals log updated.";
+      await loadDealsLog();
+      setGlideStatus(body.message || "Deals log entry created successfully.", "success");
+    }
+
+    async function saveAlertsLead() {
+      const payload = {
+        contact: document.getElementById("alertsContactInput").value || "",
+      };
+      const res = await fetch("/glide/alerts-leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGlideStatus(body.detail || "Failed to capture alerts lead.", "error");
+        return;
+      }
+      document.getElementById("alertsContactInput").value = "";
+      document.getElementById("alertsLeadsMeta").textContent = "Alerts leads updated.";
+      await loadAlertsLeads();
+      setGlideStatus(body.message || "Alerts lead captured successfully.", "success");
+    }
+
+    async function loadGlideView(forceRefresh = false) {
+      if (glideState.loading) {
+        return;
+      }
+      glideState.loading = true;
+      setGlideStatus("Loading Glide leads...");
+      try {
+        const [todayPayload, allPayload] = await Promise.all([
+          loadGlideList("today", glideState.todaySearch),
+          loadGlideList("all", glideState.allSearch),
+        ]);
+        applyGlideListPayload("today", todayPayload);
+        applyGlideListPayload("all", allPayload);
+
+        const defaultLeadId =
+          (glideState.selectedLeadId
+            && [...glideState.todayRows, ...glideState.allRows].some((row) => row.lead_id === glideState.selectedLeadId)
+            ? glideState.selectedLeadId
+            : "")
+          || glideState.todayRows[0]?.lead_id
+          || glideState.allRows[0]?.lead_id
+          || "";
+        if (defaultLeadId) {
+          await loadGlideLeadDetail(defaultLeadId);
+        } else {
+          renderGlideDetail(null);
+        }
+        glideState.loaded = true;
+        glideState.needsRefresh = false;
+        setGlideStatus(forceRefresh ? "Glide leads refreshed." : "Glide leads loaded.", "success");
+      } catch (error) {
+        renderGlideList("glideTodayList", []);
+        renderGlideList("glideAllList", []);
+        renderGlideDetail(null);
+        setGlideStatus(error instanceof Error ? error.message : "Failed to load Glide leads.", "error");
+      } finally {
+        glideState.loading = false;
+      }
+    }
+
+    function setDataLoading(message) {
+      const table = document.getElementById("dataTable");
+      table.innerHTML = `
+        <thead class="sticky top-0 z-10 bg-[#F7EAE0] text-xs font-bold uppercase tracking-[0.14em] text-on-surface">
+          <tr>
+            <th class="sticky left-0 z-20 border-b border-r border-grid bg-[#F3E3D6] px-4 py-3">#</th>
+            <th class="border-b border-r border-grid px-4 py-3">Loading</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="sticky left-0 border-r border-grid bg-white px-4 py-10 text-center text-xs font-semibold text-on-surface-variant">1</td>
+            <td class="px-4 py-10 text-center text-sm text-on-surface-variant">${message}</td>
+          </tr>
+        </tbody>
+      `;
+    }
+
+    function renderDataTable(payload) {
+      const columns = payload.columns || [];
+      const rows = payload.rows || [];
+      const table = document.getElementById("dataTable");
+      const countBadge = document.getElementById("dataCountBadge");
+      const filterBadge = document.getElementById("dataFilterBadge");
+      const pageBadge = document.getElementById("dataPageBadge");
+      const pageMeta = document.getElementById("pageMeta");
+      const prevPageBtn = document.getElementById("prevPageBtn");
+      const nextPageBtn = document.getElementById("nextPageBtn");
+      const visibleColumns = getVisibleColumns(columns);
+      const filteredRows = getFilteredRows(rows, visibleColumns);
+
+      countBadge.textContent = `${payload.row_count || 0} rows`;
+      dataState.totalRows = payload.row_count || 0;
+      filterBadge.textContent = dataState.fromDate || dataState.toDate
+        ? `Filtered: ${dataState.fromDate || "Start"} to ${dataState.toDate || "End"}`
+        : "No date filter";
+      pageBadge.textContent = `Page ${Math.floor((payload.offset || 0) / (payload.page_size || dataState.pageSize)) + 1}`;
+      const startRow = (payload.offset || 0) + (rows.length ? 1 : 0);
+      const endRow = (payload.offset || 0) + rows.length;
+      pageMeta.textContent = `Showing ${startRow} to ${endRow} of ${payload.row_count || 0} rows | ${filteredRows.length} visible on this page`;
+      prevPageBtn.disabled = (payload.offset || 0) === 0;
+      nextPageBtn.disabled = (payload.offset || 0) + rows.length >= (payload.row_count || 0);
+
+      if (!visibleColumns.length) {
+        table.innerHTML = `
+          <thead class="sticky top-0 z-10 bg-[#F7EAE0] text-xs font-bold uppercase tracking-[0.14em] text-on-surface">
+            <tr>
+              <th class="sticky left-0 z-20 border-b border-r border-grid bg-[#F3E3D6] px-4 py-3">#</th>
+              <th class="border-b border-r border-grid px-4 py-3">No Columns</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="sticky left-0 border-r border-grid bg-white px-4 py-10 text-center text-xs font-semibold text-on-surface-variant">1</td>
+              <td class="px-4 py-10 text-center text-sm text-on-surface-variant">Enable raw text columns or choose another dataset.</td>
+            </tr>
+          </tbody>
+        `;
+        return;
+      }
+
+      const thead = `
+        <thead class="sticky top-0 z-10 bg-[#F7EAE0] text-xs font-bold uppercase tracking-[0.14em] text-on-surface">
+          <tr>
+            <th class="sticky left-0 z-30 whitespace-nowrap border-b border-r border-grid bg-[#F3E3D6] px-4 py-3">#</th>
+            ${visibleColumns.map((column) => `<th class="whitespace-nowrap border-b border-r border-grid px-4 py-3 last:border-r-0">${escapeHtml(column)}</th>`).join("")}
+          </tr>
+          <tr class="bg-[#FFF7F1]">
+            <th class="sticky left-0 z-30 border-b border-r border-grid bg-[#F8ECE2] px-4 py-2 text-[11px] font-bold text-[#6D574A]">Filter</th>
+            ${visibleColumns.map((column) => `
+              <th class="border-b border-r border-grid px-2 py-2 last:border-r-0">
+                <input class="data-column-filter w-full rounded-lg border-[#E3DCD5] bg-white px-2 py-1 text-[11px] font-medium normal-case tracking-normal text-[#5C4A40] focus:border-primary focus:ring-primary"
+                  data-column="${escapeHtml(column)}"
+                  placeholder="Filter ${escapeHtml(column)}"
+                  value="${escapeHtml(dataState.columnFilters[column] || "")}" />
+              </th>
+            `).join("")}
+          </tr>
+        </thead>
+      `;
+
+      const tbodyRows = filteredRows.length
+        ? filteredRows.map((row, rowIndex) => `
+            <tr class="${rowIndex % 2 === 0 ? "bg-white" : "bg-[#FFFCFA]"}">
+              <td class="sticky left-0 border-b border-r border-grid bg-inherit px-4 py-3 align-top font-mono text-xs font-semibold leading-5 text-[#6A5446]">${payload.offset + rowIndex + 1}</td>
+              ${visibleColumns.map((column, columnIndex) => `<td class="data-cell min-w-[180px] max-w-[520px] whitespace-pre-wrap break-words border-b border-r border-grid px-4 py-3 align-top font-mono text-xs leading-5 text-[#3F3128] last:border-r-0" data-row-index="${rowIndex}" data-col-index="${columnIndex}" tabindex="-1">${escapeHtml(row[column] ?? "")}</td>`).join("")}
+            </tr>
+          `).join("")
+        : `<tr><td class="sticky left-0 border-b border-r border-grid bg-white px-4 py-10 text-center text-xs font-semibold text-on-surface-variant">1</td><td class="px-4 py-10 text-center text-sm text-on-surface-variant" colspan="${visibleColumns.length}">No rows match the current filter.</td></tr>`;
+
+      table.innerHTML = `${thead}<tbody>${tbodyRows}</tbody>`;
+      table.querySelectorAll(".data-column-filter").forEach((input) => {
+        input.addEventListener("input", (event) => {
+          dataState.columnFilters[event.target.dataset.column] = event.target.value;
+          renderDataTable(dataState.lastPayload || payload);
+        });
+      });
+      initializeCellNavigation();
+    }
+
+    async function loadData() {
+      setDataLoading("Loading data...");
+      setDataStatus("Loading data from the database...");
+      const query = new URLSearchParams();
+      query.set("tab", dataState.tab);
+      query.set("limit", String(dataState.pageSize));
+      query.set("offset", String(dataState.offset));
+      if (dataState.fromDate) {
+        query.set("from_date", dataState.fromDate);
+      }
+      if (dataState.toDate) {
+        query.set("to_date", dataState.toDate);
+      }
+
+      const suffix = query.toString() ? `?${query.toString()}` : "";
+      const res = await fetch(`/data${suffix}`);
+      const body = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setDataLoading(body.detail || "Failed to load data.");
+        setDataStatus(body.detail || "Failed to load data.", "error");
+        return;
+      }
+
+      const tabSelect = document.getElementById("data-tab-select");
+      const availableTabs = body.available_tabs || [];
+      if (availableTabs.length && !tabSelect.dataset.initialized) {
+        tabSelect.innerHTML = availableTabs
+          .map((tabName) => `<option value="${tabName}">${tabName}</option>`)
+          .join("");
+        tabSelect.value = body.tab || dataState.tab;
+        tabSelect.dataset.initialized = "true";
+      } else if (body.tab) {
+        tabSelect.value = body.tab;
+      }
+
+      dataState.loaded = true;
+      dataState.lastPayload = body;
+      setDataStatus(`Loaded ${body.tab || dataState.tab} from the database. Use the filter row under the headers for column-wise filtering.`, "success");
+      renderDataTable(body);
+    }
+
+    async function syncDataStore() {
+      const res = await fetch("/data/sync", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setDataStatus(body.message || "Database state refreshed.", "success");
+        await loadData();
+      } else {
+        setDataStatus(body.detail || "Failed to reload the database state.", "error");
+      }
+    }
+
+    function buildExportQuery(scope) {
+      const query = new URLSearchParams();
+      query.set("scope", scope);
+      query.set("tab", dataState.tab);
+      if (dataState.fromDate) {
+        query.set("from_date", dataState.fromDate);
+      }
+      if (dataState.toDate) {
+        query.set("to_date", dataState.toDate);
+      }
+      return query.toString();
+    }
+
+    async function downloadData(scope) {
+      const query = buildExportQuery(scope);
+      const response = await fetch(`/data/export?${query}`);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        setDataStatus(body.detail || "Failed to download workbook.", "error");
+        return;
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = getFilenameFromDisposition(
+        response.headers.get("Content-Disposition"),
+        scope === "all" ? "matchlayer_all_tabs.xlsx" : "matchlayer_export.xlsx"
+      );
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setDataStatus("Workbook download started.", "success");
+    }
+
+    function syncModalDatesFromFilters() {
+      document.getElementById("modal-from-date").value = document.getElementById("data-from-date").value;
+      document.getElementById("modal-to-date").value = document.getElementById("data-to-date").value;
+    }
+
+    function toggleClearButtonState() {
+      const confirmValue = document.getElementById("confirmClearText").value.trim().toUpperCase();
+      document.getElementById("confirmClearDataBtn").disabled = confirmValue !== "CONFIRM";
+    }
+
+    function setClearModalStatus(message, tone = "error") {
+      const status = document.getElementById("clearModalStatus");
+      if (!message) {
+        status.hidden = true;
+        status.textContent = "";
+        status.className = "hidden rounded-2xl border px-4 py-3 text-sm font-medium";
+        return;
+      }
+
+      const palette = tone === "success"
+        ? "rounded-2xl border border-[#CBE7D1] bg-[#EEF9F0] px-4 py-3 text-sm font-medium text-[#265C2E]"
+        : "rounded-2xl border border-[#F4D3CF] bg-danger-soft px-4 py-3 text-sm font-medium text-[#7A271A]";
+      status.hidden = false;
+      status.className = palette;
+      status.textContent = message;
+    }
+
+    function openClearModal() {
+      syncModalDatesFromFilters();
+      document.getElementById("confirmClearText").value = "";
+      setClearModalStatus("");
+      toggleClearButtonState();
+      document.getElementById("clearDataModal").hidden = false;
+    }
+
+    function closeClearModal() {
+      document.getElementById("clearDataModal").hidden = true;
+    }
+
+    async function clearData() {
+      const selectedMode = document.querySelector('input[name="clear-mode"]:checked').value;
+      const fromDate = document.getElementById("modal-from-date").value || null;
+      const toDate = document.getElementById("modal-to-date").value || null;
+      const confirmButton = document.getElementById("confirmClearDataBtn");
+
+      if (selectedMode === "range" && !fromDate && !toDate) {
+        setClearModalStatus("Select at least one date for range deletion, or switch to Clear All Data.");
+        return;
+      }
+
+      const payload = {
+        mode: selectedMode,
+        confirm_text: document.getElementById("confirmClearText").value.trim().toUpperCase(),
+        from_date: fromDate,
+        to_date: toDate,
+      };
+
+      confirmButton.disabled = true;
+      setClearModalStatus("Deleting data...");
+
+      try {
+        const res = await fetch("/data/clear", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const body = await res.json().catch(() => ({}));
+        writeResponse(res.status, body);
+
+        if (!res.ok) {
+          setClearModalStatus(body.detail || "Failed to clear data.");
+          return;
+        }
+
+        setClearModalStatus(body.message || "Data cleared successfully.", "success");
+        closeClearModal();
+        setDataStatus(body.message || "Data cleared successfully.", "success");
+        await loadData();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Request failed before the server could respond.";
+        writeResponse(500, { detail: message });
+        setClearModalStatus(message);
+      } finally {
+        toggleClearButtonState();
+      }
+    }
+
+    document.getElementById("processAllBtn").addEventListener("click", () => {
+      const out = document.getElementById("out");
+
+      if (hasSelectedFiles("file-upload") || hasSelectedFiles("folder-upload")) {
+        document.getElementById("fileForm").requestSubmit();
+        return;
+      }
+
+      if (hasTextValue("chat-text")) {
+        document.getElementById("pasteForm").requestSubmit();
+        return;
+      }
+
+      if (hasTextValue("manual-name") && hasTextValue("manual-requirement")) {
+        document.getElementById("manualForm").requestSubmit();
+        return;
+      }
+
+      out.textContent = JSON.stringify(
+        {
+          status: 400,
+          body: {
+            detail: "Nothing to process yet. Upload files, choose a folder, paste chat text, or fill name and requirement in manual entry."
+          }
+        },
+        null,
+        2
+      );
+      document.getElementById("dashboard").scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+
+    document.getElementById("brandLink").addEventListener("click", (event) => {
+      event.preventDefault();
+      setView("ingestion-view");
+    });
+
+    document.querySelectorAll(".view-link").forEach((link) => {
+      link.addEventListener("click", () => {
+        setView(link.dataset.viewTarget);
+      });
+    });
+
+    document.querySelectorAll(".tab-link").forEach((link) => {
+      if (!link.dataset.tabTarget) {
+        return;
+      }
+      link.addEventListener("click", () => {
+        activateTab(link.dataset.tabTarget);
+      });
+    });
+
+    document.getElementById("applyDataFiltersBtn").addEventListener("click", async () => {
+      dataState.tab = document.getElementById("data-tab-select").value || "Structured Data";
+      dataState.pageSize = Number(document.getElementById("data-page-size").value || 250);
+      dataState.fromDate = document.getElementById("data-from-date").value;
+      dataState.toDate = document.getElementById("data-to-date").value;
+      dataState.offset = 0;
+      await loadData();
+    });
+
+    document.getElementById("resetDataFiltersBtn").addEventListener("click", async () => {
+      document.getElementById("data-tab-select").value = "Structured Data";
+      document.getElementById("data-page-size").value = "250";
+      document.getElementById("data-from-date").value = "";
+      document.getElementById("data-to-date").value = "";
+      dataState.tab = "Structured Data";
+      dataState.pageSize = 250;
+      dataState.fromDate = "";
+      dataState.toDate = "";
+      dataState.offset = 0;
+      dataState.columnFilters = {};
+      await loadData();
+    });
+
+    document.getElementById("data-tab-select").addEventListener("change", async (event) => {
+      dataState.tab = event.target.value || "Structured Data";
+      dataState.offset = 0;
+      dataState.columnFilters = {};
+      await loadData();
+    });
+
+    document.getElementById("data-page-size").addEventListener("change", async (event) => {
+      dataState.pageSize = Number(event.target.value || 250);
+      dataState.offset = 0;
+      await loadData();
+    });
+
+    document.getElementById("prevPageBtn").addEventListener("click", async () => {
+      dataState.offset = Math.max(0, dataState.offset - dataState.pageSize);
+      await loadData();
+    });
+
+    document.getElementById("nextPageBtn").addEventListener("click", async () => {
+      dataState.offset += dataState.pageSize;
+      await loadData();
+    });
+
+    document.getElementById("refreshDataBtn").addEventListener("click", loadData);
+    document.getElementById("syncDataBtn").addEventListener("click", syncDataStore);
+    document.getElementById("maximizeGridBtn").addEventListener("click", toggleGridMaximized);
+    document.getElementById("downloadTabBtn").addEventListener("click", () => downloadData("tab"));
+    document.getElementById("downloadAllBtn").addEventListener("click", () => downloadData("all"));
+    document.getElementById("refreshGlideBtn").addEventListener("click", () => loadGlideView(true));
+    document.getElementById("refreshGlideFilterConfigBtn").addEventListener("click", loadGlideFilterConfig);
+    document.getElementById("refreshDealsLogBtn").addEventListener("click", loadDealsLog);
+    document.getElementById("refreshAlertsLeadsBtn").addEventListener("click", loadAlertsLeads);
+    document.getElementById("saveDealsLogBtn").addEventListener("click", saveDealsLog);
+    document.getElementById("saveAlertsLeadBtn").addEventListener("click", saveAlertsLead);
+    document.getElementById("saveGlideExecutionBtn").addEventListener("click", saveGlideExecution);
+    document.getElementById("glideTodaySearch").addEventListener("input", (event) => {
+      glideState.todaySearch = event.target.value;
+      scheduleGlideSearch("today");
+    });
+    document.getElementById("glideAllSearch").addEventListener("input", (event) => {
+      glideState.allSearch = event.target.value;
+      scheduleGlideSearch("all");
+    });
+    document.getElementById("detailCallLead").addEventListener("click", () => {
+      logGlideAction("call");
+    });
+    document.getElementById("detailWhatsappLead").addEventListener("click", () => {
+      logGlideAction("whatsapp");
+    });
+    
+    document.getElementById("generateMessageBtn").addEventListener("click", async () => {
+      if (!glideState.selectedDetail?.lead_id) {
+        setGlideStatus("Select a lead first to generate message.", "error");
+        return;
+      }
+      const template = document.getElementById("detailTemplateSelect").value;
+      if (!template) {
+        setGlideStatus("Select a template first.", "error");
+        return;
+      }
+      
+      const res = await fetch("/communication/generate-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          template_name: template,
+          lead_id: glideState.selectedDetail.lead_id,
+          phone: glideState.selectedDetail.phone || "",
+        }),
+      });
+      
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGlideStatus(body.detail || "Failed to generate message.", "error");
+        return;
+      }
+      
+      document.getElementById("generatedMessageText").textContent = body.message;
+      document.getElementById("sendWhatsappBtn").href = body.whatsapp_url || "#";
+      document.getElementById("generatedMessageWrap").style.display = "block";
+      setGlideStatus("Message generated successfully. Click to send via WhatsApp.", "success");
+    });
+    
+    document.getElementById("showRawColumnsToggle").addEventListener("change", (event) => {
+      dataState.showRawColumns = event.target.checked;
+      dataState.columnFilters = {};
+      if (dataState.lastPayload) {
+        renderDataTable(dataState.lastPayload);
+      }
+    });
+    document.getElementById("openClearModalBtn").addEventListener("click", openClearModal);
+    document.getElementById("closeClearModalBtn").addEventListener("click", closeClearModal);
+    document.getElementById("cancelClearDataBtn").addEventListener("click", closeClearModal);
+    document.getElementById("confirmClearDataBtn").addEventListener("click", clearData);
+    document.getElementById("confirmClearText").addEventListener("input", toggleClearButtonState);
+
+    async function loadRunLog() {
+      const tbody = document.getElementById("runLogTableBody");
+      tbody.innerHTML = '<tr><td class="px-4 py-10 text-center text-sm text-on-surface-variant" colspan="11">Loading...</td></tr>';
+      
+      const res = await fetch(`/data/run-log?limit=${runLogState.pageSize}&offset=${runLogState.offset}`);
+      const data = await res.json().catch(() => ({}));
+      
+      if (!res.ok) {
+        tbody.innerHTML = '<tr><td class="px-4 py-10 text-center text-sm text-danger" colspan="11">Failed to load run log</td></tr>';
+        return;
+      }
+      
+      const rows = data.rows || [];
+      runLogState.totalRows = data.row_count || 0;
+      
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td class="px-4 py-10 text-center text-sm text-on-surface-variant" colspan="11">No runs logged yet</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = rows.map((row, idx) => {
+        const startTime = new Date(row.start_time || '');
+        const endTime = new Date(row.end_time || '');
+        const duration = endTime && startTime ? ((endTime - startTime) / 1000).toFixed(2) + 's' : '-';
+        const statusClass = row.status === 'SUCCESS' ? 'text-[#265C2E]' : 'text-danger';
+        const statusBg = row.status === 'SUCCESS' ? 'bg-[#EAF6E7]' : 'bg-[#FFF3F1]';
+        
+        return `
+          <tr class="${idx % 2 === 0 ? 'bg-white' : 'bg-[#FFFCFA]'}">
+            <td class="border-b border-r border-grid px-4 py-3 font-mono text-xs">${escapeHtml(row.run_id || '').substring(0, 8)}...</td>
+            <td class="border-b border-r border-grid px-4 py-3 text-xs">${escapeHtml(row.start_time || '-')}</td>
+            <td class="border-b border-r border-grid px-4 py-3 text-xs">${escapeHtml(row.end_time || '-')}</td>
+            <td class="border-b border-r border-grid px-4 py-3 text-xs">${duration}</td>
+            <td class="border-b border-r border-grid px-4 py-3 text-center">${escapeHtml(row.rows_processed || '0')}</td>
+            <td class="border-b border-r border-grid px-4 py-3 text-center">${escapeHtml(row.new_rows || '0')}</td>
+            <td class="border-b border-r border-grid px-4 py-3 text-center">${escapeHtml(row.duplicates || '0')}</td>
+            <td class="border-b border-r border-grid px-4 py-3 text-center">${escapeHtml(row.ignored || '0')}</td>
+            <td class="border-b border-r border-grid px-4 py-3 text-center">${escapeHtml(row.matches || '0')}</td>
+            <td class="border-b border-r border-grid px-4 py-3"><span class="rounded-full px-2 py-1 text-xs font-semibold ${statusBg} ${statusClass}">${escapeHtml(row.status || '-')}</span></td>
+            <td class="border-b border-grid px-4 py-3 text-xs text-danger">${escapeHtml(row.error_message || '-')}</td>
+          </tr>
+        `;
+      }).join('');
+      
+      const startRow = runLogState.offset + 1;
+      const endRow = runLogState.offset + rows.length;
+      document.getElementById('runLogPageMeta').textContent = `Showing ${startRow} to ${endRow} of ${runLogState.totalRows}`;
+      document.getElementById('prevRunLogPageBtn').disabled = runLogState.offset === 0;
+      document.getElementById('nextRunLogPageBtn').disabled = runLogState.offset + rows.length >= runLogState.totalRows;
+    }
+
+    document.getElementById('refreshRunLogBtn').addEventListener('click', loadRunLog);
+    document.getElementById('prevRunLogPageBtn').addEventListener('click', async () => {
+      runLogState.offset = Math.max(0, runLogState.offset - runLogState.pageSize);
+      await loadRunLog();
+    });
+    document.getElementById('nextRunLogPageBtn').addEventListener('click', async () => {
+      runLogState.offset += runLogState.pageSize;
+      await loadRunLog();
+    });
+
+    document.getElementById("settingsForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const out = document.getElementById("out");
+      out.textContent = "Saving settings...";
+
+      const formData = new FormData(e.target);
+      const settings = {};
+      formData.forEach((value, key) => {
+        settings[key] = parseFloat(value);
+      });
+
+      const res = await fetch("/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings)
+      });
+
+      const body = await res.json().catch(() => ({}));
+      writeResponse(res.status, body);
+    });
+
+    document.getElementById("loadSettingsBtn").addEventListener("click", async () => {
+      const out = document.getElementById("out");
+      out.textContent = "Loading settings...";
+
+      const res = await fetch("/settings");
+      const settings = await res.json();
+
+      document.getElementById("match_threshold").value = settings.match_threshold || 40;
+      document.getElementById("dedup_window_days").value = settings.dedup_window_days || 1;
+      document.getElementById("lookback_days").value = settings.lookback_days || 0;
+      document.getElementById("top_leads_count").value = settings.top_leads_count || 10;
+      document.getElementById("top_leads_validation_size").value = settings.top_leads_validation_size || 10;
+      document.getElementById("glide_activity_window_days").value = settings.glide_activity_window_days || 120;
+      document.getElementById("glide_recent_interaction_days").value = settings.glide_recent_interaction_days || 30;
+      document.getElementById("glide_priority_qualified_score").value = settings.glide_priority_qualified_score || 60;
+
+      writeResponse(res.status, settings);
+    });
+
+    document.getElementById("resetSettingsBtn").addEventListener("click", () => {
+      document.getElementById("match_threshold").value = 40;
+      document.getElementById("dedup_window_days").value = 1;
+      document.getElementById("lookback_days").value = 0;
+      document.getElementById("top_leads_count").value = 10;
+      document.getElementById("top_leads_validation_size").value = 10;
+      document.getElementById("glide_activity_window_days").value = 120;
+      document.getElementById("glide_recent_interaction_days").value = 30;
+      document.getElementById("glide_priority_qualified_score").value = 60;
+    });
+
+    submitForm("fileForm", "/ingest/whatsapp-file");
+    submitForm("pasteForm", "/ingest/whatsapp-paste");
+    submitForm("manualForm", "/ingest/manual");
+    updateGridMaximizeButton();
+    activateTab("dashboard-tab");
+    setView("ingestion-view");
+  </script>
+</body>
+</html>
