@@ -520,15 +520,15 @@ class DatabaseClient:
                 f'''
                 SELECT COUNT(*) AS row_count
                 FROM "{structured_table}"
-                WHERE UPPER(COALESCE("{_column_name("data_status")}", "")) = 'APPROVED'
+                WHERE UPPER(COALESCE("{_column_name("data_status")}", '')) = 'APPROVED'
                 '''
             ).fetchone()["row_count"]
             if approved_count:
-                source_filter = f'UPPER(COALESCE("{_column_name("data_status")}", "")) = \'APPROVED\''
+                source_filter = f'UPPER(COALESCE("{_column_name("data_status")}", \'\')) = \'APPROVED\''
             else:
                 source_filter = (
-                    f'COALESCE("{_column_name("Type")}", "") IN (\'Buyer\', \'Seller\') '
-                    f'AND COALESCE("{_column_name("Date")}", "") <> \'\''
+                    f'COALESCE("{_column_name("Type")}", \'\') IN (\'Buyer\', \'Seller\') '
+                    f'AND COALESCE("{_column_name("Date")}", \'\') <> \'\''
                 )
             connection.execute(
                 f'''
