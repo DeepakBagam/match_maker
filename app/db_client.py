@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .reference_data import REFERENCE_DATA_COLUMNS
 from .schemas import (
     CLEAN_DATA_COLUMNS,
     FINAL_VALIDATION_COLUMNS,
@@ -19,6 +20,7 @@ from .schemas import (
     TOP_LEAD_COLUMNS,
     TOP_LEAD_REVIEW_COLUMNS,
     VALIDATION_COLUMNS,
+    StructuredLead,
 )
 
 PROCESSED_MESSAGE_COLUMNS = ["Fingerprint", "Source", "Timestamp", "Raw Message"]
@@ -77,6 +79,7 @@ ALERTS_LEADS_COLUMNS = [
     "Timestamp",
     "Contact",
     "Source",
+    "Follow_Up_Message",
 ]
 
 REQUIRED_TABS = {
@@ -104,10 +107,11 @@ REQUIRED_TABS = {
     "Location Mapping": ["Raw Value", "Canonical Value", "Aliases", "Optional Tags"],
     "Property Type Mapping": ["Raw Value", "Canonical Value", "Aliases", "Optional Tags"],
     "Scoring Weights": ["key", "value"],
+    "Reference Data": REFERENCE_DATA_COLUMNS,
 }
 
 DEFAULT_CONFIG = {
-    "lookback_days": 0,
+    "lookback_days": 365,
     "match_threshold": 40,
     "dedup_window_days": 1,
     "top_leads_count": 10,
@@ -161,6 +165,13 @@ class _PostgresCursor:
     def fetchone(self) -> Any:
         row = self._cursor.fetchone()
         return self._wrap_row(row) if row is not None else None
+
+    @property
+    def rowcount(self) -> int:
+        try:
+            return int(self._cursor.rowcount or 0)
+        except Exception:
+            return 0
 
     @staticmethod
     def _wrap_row(row: Any) -> Any:
@@ -260,6 +271,9 @@ class DatabaseClient:
         connection.execute("PRAGMA synchronous=NORMAL")
         connection.execute("PRAGMA temp_store=MEMORY")
         connection.execute("PRAGMA cache_size=-20000")
+        connection.execute("PRAGMA mmap_size=268435456")
+        connection.execute("PRAGMA cache_spill=OFF")
+        connection.execute("PRAGMA busy_timeout=5000")
         return connection
 
     def ensure_structure(self, force: bool = False) -> None:
@@ -269,6 +283,7 @@ class DatabaseClient:
         with self._connect() as connection:
             for tab, columns in REQUIRED_TABS.items():
                 self._create_table(connection, tab, columns)
+                self._ensure_table_columns(connection, tab, columns)
             self._seed_key_value(connection, "Config", DEFAULT_CONFIG)
             self._seed_key_value(connection, "Scoring Weights", DEFAULT_WEIGHTS)
             self._ensure_indexes(connection)
@@ -294,6 +309,32 @@ class DatabaseClient:
             sql_columns.append(f'"{_column_name(column)}" TEXT')
         connection.execute(f'CREATE TABLE IF NOT EXISTS "{table_name}" ({", ".join(sql_columns)})')
 
+    def _existing_table_columns(self, connection: sqlite3.Connection | _PostgresConnection, table_name: str) -> set[str]:
+        if self.is_postgres:
+            rows = connection.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = ?
+                """,
+                [table_name],
+            ).fetchall()
+            return {str(row["column_name"]).strip() for row in rows if row["column_name"]}
+
+        rows = connection.execute(f'PRAGMA table_info("{table_name}")').fetchall()
+        return {str(row["name"]).strip() for row in rows if row["name"]}
+
+    def _ensure_table_columns(self, connection: sqlite3.Connection | _PostgresConnection, tab: str, columns: list[str]) -> None:
+        if columns == ["key", "value"]:
+            return
+        table_name = _table_name(tab)
+        existing_columns = self._existing_table_columns(connection, table_name)
+        for column in columns:
+            normalized = _column_name(column)
+            if normalized in existing_columns:
+                continue
+            connection.execute(f'ALTER TABLE "{table_name}" ADD COLUMN "{normalized}" TEXT')
+
     def _seed_key_value(self, connection: sqlite3.Connection, tab: str, data: dict[str, float]) -> None:
         table_name = _table_name(tab)
         count = connection.execute(f'SELECT COUNT(*) AS row_count FROM "{table_name}"').fetchone()["row_count"]
@@ -308,6 +349,10 @@ class DatabaseClient:
         connection.execute(
             f'CREATE INDEX IF NOT EXISTS "idx_{_table_name("Structured Data")}_date" '
             f'ON "{_table_name("Structured Data")}" ("{_column_name("Date")}")'
+        )
+        connection.execute(
+            f'CREATE INDEX IF NOT EXISTS "idx_{_table_name("Structured Data")}_lead_id" '
+            f'ON "{_table_name("Structured Data")}" ("{_column_name("Lead_ID")}")'
         )
         processed_messages_index = f'idx_{_table_name("Processed Messages")}_fingerprint'
         processed_messages_table = _table_name("Processed Messages")
@@ -335,6 +380,22 @@ class DatabaseClient:
             f'CREATE INDEX IF NOT EXISTS "idx_{_table_name("Matches")}_seller_lead" '
             f'ON "{_table_name("Matches")}" ("{_column_name("Seller Lead_ID")}")'
         )
+        reference_table = _table_name("Reference Data")
+        for name, column in (
+            ("lead_id", "Lead_ID"),
+            ("entry_type", "Entry_Type"),
+            ("lead_type", "Lead_Type"),
+            ("location", "Location"),
+            ("property_type", "Property_Type"),
+            ("phone", "Phone"),
+            ("name", "Name"),
+            ("broker", "Broker"),
+            ("last_seen", "Last_Seen"),
+        ):
+            connection.execute(
+                f'CREATE INDEX IF NOT EXISTS "idx_{reference_table}_{name}" '
+                f'ON "{reference_table}" ("{_column_name(column)}")'
+            )
 
     def get_table(self, tab: str) -> list[list[str]]:
         self.ensure_structure()
@@ -432,13 +493,23 @@ class DatabaseClient:
     ) -> tuple[str, list[Any]]:
         where_parts: list[str] = []
         params: list[Any] = []
-        date_column = _column_name("Date")
-        if "Date" in columns and from_date:
-            where_parts.append(f'"{date_column}" >= ?')
-            params.append(from_date)
-        if "Date" in columns and to_date:
-            where_parts.append(f'"{date_column}" <= ?')
-            params.append(to_date)
+        filter_column = ""
+        use_day_bounds = False
+        if "Date" in columns:
+            filter_column = _column_name("Date")
+        elif "Timestamp" in columns:
+            filter_column = _column_name("Timestamp")
+            use_day_bounds = True
+        elif "Submitted At" in columns:
+            filter_column = _column_name("Submitted At")
+            use_day_bounds = True
+
+        if filter_column and from_date:
+            where_parts.append(f'COALESCE("{filter_column}", \'\') >= ?')
+            params.append(f"{from_date} 00:00:00" if use_day_bounds else from_date)
+        if filter_column and to_date:
+            where_parts.append(f'COALESCE("{filter_column}", \'\') <= ?')
+            params.append(f"{to_date} 23:59:59" if use_day_bounds else to_date)
         where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
         return where_sql, params
 
@@ -470,7 +541,6 @@ class DatabaseClient:
             connection.commit()
 
     def append_rows(self, tab: str, rows: list[list[object]], batch_size: int = 1000) -> None:
-        del batch_size
         if not rows:
             return
         self.ensure_structure()
@@ -484,6 +554,25 @@ class DatabaseClient:
         normalized = [value + [""] * (len(columns) - len(value)) for value in values]
         with self._connect() as connection:
             connection.executemany(sql, normalized)
+            connection.commit()
+
+    def append_many_rows(self, payloads: dict[str, list[list[object]]]) -> None:
+        if not payloads:
+            return
+        self.ensure_structure()
+        with self._connect() as connection:
+            for tab, rows in payloads.items():
+                if not rows:
+                    continue
+                columns = REQUIRED_TABS[tab]
+                table_name = _table_name(tab)
+                column_names = [_column_name(column) for column in columns]
+                placeholders = ", ".join("?" for _ in column_names)
+                quoted_columns = ", ".join(f'"{column}"' for column in column_names)
+                sql = f'INSERT INTO "{table_name}" ({quoted_columns}) VALUES ({placeholders})'
+                values = [[("" if value is None else str(value)) for value in row[: len(columns)]] for row in rows]
+                normalized = [value + [""] * (len(columns) - len(value)) for value in values]
+                connection.executemany(sql, normalized)
             connection.commit()
 
     def replace_rows(self, tab: str, header: list[str], rows: list[list[object]]) -> None:
@@ -572,8 +661,114 @@ class DatabaseClient:
     def read_structured(self) -> list[list[str]]:
         return self.get_table("Structured Data")
 
+    def read_structured_leads_fast(self) -> list[StructuredLead]:
+        self.ensure_structure()
+        columns = STRUCTURED_COLUMNS
+        table_name = _table_name("Structured Data")
+        select_columns = ", ".join(f'"{_column_name(column)}"' for column in columns)
+
+        with self._connect() as connection:
+            rows = connection.execute(f'SELECT {select_columns} FROM "{table_name}" ORDER BY row_id').fetchall()
+
+        leads: list[StructuredLead] = []
+        for row in rows:
+            payload = {
+                column: row[_column_name(column)]
+                for column in columns
+            }
+            if any(str(value).strip() for value in payload.values() if value is not None):
+                leads.append(StructuredLead(payload))
+        return leads
+
     def read_processed_messages(self) -> list[list[str]]:
         return self.get_table("Processed Messages")
+
+    def count_rows(self, tab: str) -> int:
+        self.ensure_structure()
+        table_name = _table_name(tab)
+        with self._connect() as connection:
+            return int(connection.execute(f'SELECT COUNT(*) AS row_count FROM "{table_name}"').fetchone()["row_count"] or 0)
+
+    def clear_tab(self, tab: str) -> None:
+        self.ensure_structure()
+        table_name = _table_name(tab)
+        with self._connect() as connection:
+            connection.execute(f'DELETE FROM "{table_name}"')
+            connection.commit()
+
+    def delete_rows_by_text_range(
+        self,
+        tab: str,
+        column: str,
+        from_value: str | None = None,
+        to_value: str | None = None,
+    ) -> None:
+        self.ensure_structure()
+        if not from_value and not to_value:
+            return
+        table_name = _table_name(tab)
+        column_name = _column_name(column)
+        where_parts: list[str] = []
+        params: list[Any] = []
+        if from_value:
+            where_parts.append(f'COALESCE("{column_name}", \'\') >= ?')
+            params.append(from_value)
+        if to_value:
+            where_parts.append(f'COALESCE("{column_name}", \'\') <= ?')
+            params.append(to_value)
+        if not where_parts:
+            return
+        with self._connect() as connection:
+            connection.execute(f'DELETE FROM "{table_name}" WHERE {" AND ".join(where_parts)}', params)
+            connection.commit()
+
+    def upsert_structured_leads(self, leads: list[StructuredLead]) -> None:
+        if not leads:
+            return
+        self.ensure_structure()
+        table_name = _table_name("Structured Data")
+        columns = STRUCTURED_COLUMNS
+        column_names = [_column_name(column) for column in columns]
+        lead_id_column = _column_name("Lead_ID")
+        assignments = ", ".join(f'"{column}" = ?' for column in column_names)
+        quoted_columns = ", ".join(f'"{column}"' for column in column_names)
+        placeholders = ", ".join("?" for _ in column_names)
+        insert_sql = f'INSERT INTO "{table_name}" ({quoted_columns}) VALUES ({placeholders})'
+        update_sql = f'UPDATE "{table_name}" SET {assignments} WHERE row_id = ?'
+
+        with self._connect() as connection:
+            lead_ids = [
+                str(lead.values.get("Lead_ID", "")).strip()
+                for lead in leads
+                if str(lead.values.get("Lead_ID", "")).strip()
+            ]
+            existing_rows: dict[str, Any] = {}
+            if lead_ids:
+                chunk_size = 900
+                for start in range(0, len(lead_ids), chunk_size):
+                    chunk = lead_ids[start:start + chunk_size]
+                    placeholders_ids = ", ".join("?" for _ in chunk)
+                    for row in connection.execute(
+                        f'SELECT row_id, "{lead_id_column}" AS lead_id FROM "{table_name}" WHERE "{lead_id_column}" IN ({placeholders_ids})',
+                        chunk,
+                    ).fetchall():
+                        existing_rows[str(row["lead_id"]).strip()] = row["row_id"]
+
+            inserts: list[list[Any]] = []
+            updates: list[list[Any]] = []
+            for lead in leads:
+                row = lead.to_row()
+                lead_id = str(lead.values.get("Lead_ID", "")).strip()
+                if lead_id and lead_id in existing_rows:
+                    updates.append([*row, existing_rows[lead_id]])
+                else:
+                    inserts.append(row)
+
+            if inserts:
+                connection.executemany(insert_sql, inserts)
+            if updates:
+                connection.executemany(update_sql, updates)
+            connection.commit()
 
     def get_processed_message_fingerprints(self) -> set[str]:
         self.ensure_structure()
@@ -665,3 +860,207 @@ class DatabaseClient:
         """Revert APPROVED data to RAW if edited."""
         if current_status.upper() == "APPROVED":
             self.update_structured_data_status(lead_id, "RAW")
+
+    def delete_lead(self, lead_id: str) -> dict[str, int]:
+        self.ensure_structure()
+        normalized_lead_id = lead_id.strip()
+        if not normalized_lead_id:
+            return {"structured": 0, "matches": 0, "execution": 0, "reference": 0, "deals": 0}
+
+        structured_table = _table_name("Structured Data")
+        matches_table = _table_name("Matches")
+        execution_table = _table_name("Glide Execution")
+        reference_table = _table_name("Reference Data")
+        deals_table = _table_name("Deals Log")
+
+        counts = {"structured": 0, "matches": 0, "execution": 0, "reference": 0, "deals": 0}
+        with self._connect() as connection:
+            result = connection.execute(
+                f'DELETE FROM "{structured_table}" WHERE "{_column_name("Lead_ID")}" = ?',
+                [normalized_lead_id],
+            )
+            counts["structured"] = int(getattr(result, "rowcount", 0) or 0)
+
+            result = connection.execute(
+                f'''
+                DELETE FROM "{matches_table}"
+                WHERE "{_column_name("Buyer Lead_ID")}" = ?
+                   OR "{_column_name("Seller Lead_ID")}" = ?
+                ''',
+                [normalized_lead_id, normalized_lead_id],
+            )
+            counts["matches"] = int(getattr(result, "rowcount", 0) or 0)
+
+            result = connection.execute(
+                f'DELETE FROM "{execution_table}" WHERE "{_column_name("Lead_ID")}" = ?',
+                [normalized_lead_id],
+            )
+            counts["execution"] = int(getattr(result, "rowcount", 0) or 0)
+
+            result = connection.execute(
+                f'DELETE FROM "{reference_table}" WHERE "{_column_name("Lead_ID")}" = ?',
+                [normalized_lead_id],
+            )
+            counts["reference"] = int(getattr(result, "rowcount", 0) or 0)
+
+            result = connection.execute(
+                f'DELETE FROM "{deals_table}" WHERE "{_column_name("Lead_ID")}" = ?',
+                [normalized_lead_id],
+            )
+            counts["deals"] = int(getattr(result, "rowcount", 0) or 0)
+            connection.commit()
+
+        self.sync_clean_data_formula()
+        return counts
+
+    def search_reference_data(
+        self,
+        *,
+        query: str = "",
+        entry_type: str = "",
+        lead_type: str = "",
+        location: str = "",
+        property_type: str = "",
+        broker: str = "",
+        phone: str = "",
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        self.ensure_structure()
+        limit = max(1, min(limit, 50))
+        offset = max(0, offset)
+
+        if not hasattr(self, "_connect"):
+            dataset = self.get_table_page("Reference Data", limit=50000, offset=0)
+            rows = dataset.get("rows", [])
+            normalized_query = query.strip().lower()
+            filters = {
+                "entry_type": entry_type.strip().lower(),
+                "lead_type": lead_type.strip().lower(),
+                "location": location.strip().lower(),
+                "property_type": property_type.strip().lower(),
+                "broker": broker.strip().lower(),
+                "phone": phone.strip().lower(),
+            }
+
+            def matches(row: dict[str, str]) -> bool:
+                if filters["entry_type"] and row.get("Entry_Type", "").strip().lower() != filters["entry_type"]:
+                    return False
+                if filters["lead_type"] and row.get("Lead_Type", "").strip().lower() != filters["lead_type"]:
+                    return False
+                if filters["location"] and filters["location"] not in row.get("Location", "").strip().lower():
+                    return False
+                if filters["property_type"] and filters["property_type"] not in row.get("Property_Type", "").strip().lower():
+                    return False
+                if filters["broker"] and filters["broker"] not in row.get("Broker", "").strip().lower():
+                    return False
+                if filters["phone"] and filters["phone"] not in row.get("Phone", "").strip().lower():
+                    return False
+                if normalized_query:
+                    blob = " ".join(
+                        row.get(field, "")
+                        for field in ("Name", "Phone", "Location", "Property_Type", "Broker", "Society", "Landmark")
+                    ).lower()
+                    if normalized_query not in blob:
+                        return False
+                return True
+
+            filtered = [row for row in rows if matches(row)]
+            return {
+                "columns": list(REFERENCE_DATA_COLUMNS),
+                "rows": filtered[offset: offset + limit],
+                "row_count": len(filtered),
+                "page_size": limit,
+                "offset": offset,
+            }
+
+        table_name = _table_name("Reference Data")
+        where_parts: list[str] = []
+        params: list[Any] = []
+
+        def add_exact(column: str, value: str) -> None:
+            raw = value.strip()
+            if not raw:
+                return
+            where_parts.append(f'LOWER(COALESCE("{_column_name(column)}", \'\')) = ?')
+            params.append(raw.lower())
+
+        def add_contains(column: str, value: str) -> None:
+            raw = value.strip()
+            if not raw:
+                return
+            where_parts.append(f'LOWER(COALESCE("{_column_name(column)}", \'\')) LIKE ?')
+            params.append(f"%{raw.lower()}%")
+
+        add_exact("Entry_Type", entry_type)
+        add_exact("Lead_Type", lead_type)
+        add_contains("Location", location)
+        add_contains("Property_Type", property_type)
+        add_contains("Broker", broker)
+        add_contains("Phone", phone)
+
+        normalized_query = query.strip().lower()
+        if normalized_query:
+            search_columns = ["Name", "Phone", "Location", "Property_Type", "Broker", "Society", "Landmark"]
+            where_parts.append(
+                "(" + " OR ".join(
+                    f'LOWER(COALESCE("{_column_name(column)}", \'\')) LIKE ?'
+                    for column in search_columns
+                ) + ")"
+            )
+            params.extend([f"%{normalized_query}%"] * len(search_columns))
+
+        where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+        select_columns = ", ".join(
+            f'"{_column_name(column)}" AS "{column}"'
+            for column in REFERENCE_DATA_COLUMNS
+        )
+        with self._connect() as connection:
+            total = connection.execute(
+                f'SELECT COUNT(*) AS row_count FROM "{table_name}" {where_sql}',
+                params,
+            ).fetchone()["row_count"]
+            rows = connection.execute(
+                f'''
+                SELECT {select_columns}
+                FROM "{table_name}"
+                {where_sql}
+                ORDER BY COALESCE("{_column_name("Last_Seen")}", '') DESC, COALESCE("{_column_name("Lead_ID")}", '') DESC
+                LIMIT ? OFFSET ?
+                ''',
+                [*params, limit, offset],
+            ).fetchall()
+
+        return {
+            "columns": list(REFERENCE_DATA_COLUMNS),
+            "rows": [{column: ("" if row[column] is None else str(row[column])) for column in REFERENCE_DATA_COLUMNS} for row in rows],
+            "row_count": int(total),
+            "page_size": limit,
+            "offset": offset,
+        }
+
+    def get_reference_filter_options(self) -> dict[str, list[str]]:
+        self.ensure_structure()
+
+        if not hasattr(self, "_connect"):
+            dataset = self.get_table_page("Reference Data", limit=50000, offset=0)
+            rows = dataset.get("rows", [])
+            return {
+                "locations": sorted({str(row.get("Location", "")).strip() for row in rows if str(row.get("Location", "")).strip()}),
+                "property_types": sorted({str(row.get("Property_Type", "")).strip() for row in rows if str(row.get("Property_Type", "")).strip()}),
+            }
+
+        table_name = _table_name("Reference Data")
+        output: dict[str, list[str]] = {}
+        with self._connect() as connection:
+            for key, column in (("locations", "Location"), ("property_types", "Property_Type")):
+                rows = connection.execute(
+                    f'''
+                    SELECT DISTINCT "{_column_name(column)}" AS value
+                    FROM "{table_name}"
+                    WHERE COALESCE("{_column_name(column)}", '') <> ''
+                    ORDER BY value ASC
+                    '''
+                ).fetchall()
+                output[key] = [str(row["value"]).strip() for row in rows if row["value"]]
+        return output

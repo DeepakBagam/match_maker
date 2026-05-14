@@ -13,6 +13,8 @@ GLIDE_VIEW_COLUMNS = [
     "lead_id",
     "name",
     "phone",
+    "lead_type",
+    "entry_type",
     "area",
     "bhk",
     "budget",
@@ -23,6 +25,9 @@ GLIDE_VIEW_COLUMNS = [
     "last_interaction_date",
     "best_match_summary",
     "match_reason",
+    "lead_date",
+    "cleaned_message",
+    "raw_message",
     "status",
     "notes",
     "next_follow_up",
@@ -46,7 +51,7 @@ GLIDE_VIEW_COLUMNS = [
     "match_3_broker_phone",
 ]
 
-_GLIDE_CACHE: dict[str, Any] = {"built_at": None, "rows": None}
+_GLIDE_CACHE: dict[str, Any] = {"built_at": None, "rows": None, "client_key": None}
 _GLIDE_CACHE_LOCK = Lock()
 
 
@@ -54,6 +59,13 @@ def invalidate_glide_cache() -> None:
     with _GLIDE_CACHE_LOCK:
         _GLIDE_CACHE["built_at"] = None
         _GLIDE_CACHE["rows"] = None
+        _GLIDE_CACHE["client_key"] = None
+
+
+def _client_cache_key(client) -> str:
+    if hasattr(client, "database_target"):
+        return f"{getattr(client, 'backend', 'db')}:{getattr(client, 'database_target', '')}"
+    return f"memory:{id(client)}"
 
 
 def _safe_str(value: object) -> str:
@@ -196,6 +208,8 @@ def _load_glide_base_rows(client) -> list[dict[str, object]]:
         "Lead_ID",
         "Name",
         "Contact Number",
+        "Type",
+        "Transaction Type",
         "Location",
         "BHK",
         "Budget_Min",
@@ -205,6 +219,8 @@ def _load_glide_base_rows(client) -> list[dict[str, object]]:
         "Priority Score",
         "Date",
         "Last Seen",
+        "Cleaned Message",
+        "Raw Message",
     ]
     select_columns = ", ".join(
         f'"{_column_name(column)}" AS "{column}"'
@@ -509,9 +525,12 @@ def _load_match_detail_for_lead(client, lead_id: str) -> dict[str, str]:
 
 def _cached_glide_rows(client, *, now: datetime | None = None, force_refresh: bool = False) -> list[dict[str, str]]:
     now = now or datetime.now()
+    if not hasattr(client, "_connect"):
+        return build_glide_view(client, now=now)
     built_at = _GLIDE_CACHE["built_at"]
     cached_rows = _GLIDE_CACHE["rows"]
-    if not force_refresh and built_at and cached_rows is not None:
+    client_key = _client_cache_key(client)
+    if not force_refresh and built_at and cached_rows is not None and _GLIDE_CACHE.get("client_key") == client_key:
         age = (now - built_at).total_seconds()
         if age <= GLIDE_CACHE_TTL_SECONDS:
             return cached_rows
@@ -519,20 +538,25 @@ def _cached_glide_rows(client, *, now: datetime | None = None, force_refresh: bo
     with _GLIDE_CACHE_LOCK:
         built_at = _GLIDE_CACHE["built_at"]
         cached_rows = _GLIDE_CACHE["rows"]
-        if not force_refresh and built_at and cached_rows is not None:
+        if not force_refresh and built_at and cached_rows is not None and _GLIDE_CACHE.get("client_key") == client_key:
             age = (now - built_at).total_seconds()
             if age <= GLIDE_CACHE_TTL_SECONDS:
                 return cached_rows
         rows = build_glide_view(client, now=now)
         _GLIDE_CACHE["built_at"] = now
         _GLIDE_CACHE["rows"] = rows
+        _GLIDE_CACHE["client_key"] = client_key
         return rows
 
 
 def _search_blob(item: dict[str, str]) -> str:
     parts = [
         item.get("name", ""),
+        item.get("phone", ""),
+        item.get("lead_type", ""),
+        item.get("entry_type", ""),
         item.get("area", ""),
+        item.get("transaction_type", ""),
         item.get("match_1_broker_name", ""),
         item.get("match_2_broker_name", ""),
         item.get("match_3_broker_name", ""),
@@ -553,13 +577,14 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
     now = now or datetime.now()
     filter_config = get_glide_filter_config(client)
     execution_by_lead = client.get_glide_execution_map() if hasattr(client, "get_glide_execution_map") else {}
+    matches_by_lead = _load_match_summary_by_lead(client)
     if not hasattr(client, "_connect"):
         leads = _load_structured_leads(client)
-        matches_by_lead = _load_match_summary_by_lead(client)
 
         items: list[dict[str, str]] = []
         for lead in leads:
             lead_id = _safe_str(lead.values.get("Lead_ID"))
+            lead_type = _safe_str(lead.values.get("Type"))
             execution = execution_by_lead.get(lead_id, {})
             last_seen_at = _safe_str(lead.values.get("Last Seen"))
             last_seen_dt = _parse_datetime(last_seen_at)
@@ -578,16 +603,21 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
                 "lead_id": lead_id,
                 "name": _safe_str(lead.values.get("Name")),
                 "phone": _safe_str(lead.values.get("Contact Number")),
+                "lead_type": lead_type,
+                "entry_type": "Requirement" if lead_type == "Buyer" else "Property" if lead_type == "Seller" else "",
                 "area": _safe_str(lead.values.get("Location")),
                 "bhk": _normalize_numeric(lead.values.get("BHK")),
                 "budget": _budget_text(lead),
-                "transaction_type": _safe_str(lead.values.get("Type")),
+                "transaction_type": _safe_str(lead.values.get("Transaction Type")),
                 "priority": _priority_badge(lead, float(filter_config["priority_qualified_score"])),
                 "match_count": detail["match_count"],
                 "strength": _strength_label(lead, float(filter_config["priority_qualified_score"])),
                 "last_interaction_date": _normalize_date(interaction_at or last_seen_at or lead.values.get("Date")),
                 "best_match_summary": detail["best_match_summary"],
                 "match_reason": detail["match_reason"],
+                "lead_date": _normalize_date(last_seen_at or lead.values.get("Date")),
+                "cleaned_message": _safe_str(lead.values.get("Cleaned Message")),
+                "raw_message": _safe_str(lead.values.get("Raw Message")),
                 "status": _safe_str(execution.get("Status", "")),
                 "notes": _safe_str(execution.get("Notes", "")),
                 "next_follow_up": _safe_str(execution.get("Next Follow-up", "")),
@@ -625,6 +655,7 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
     items: list[dict[str, str]] = []
     for lead_values in _load_glide_base_rows(client):
         lead_id = _safe_str(lead_values.get("Lead_ID"))
+        lead_type = _safe_str(lead_values.get("Type"))
         execution = execution_by_lead.get(lead_id, {})
         last_seen_at = _safe_str(lead_values.get("Last Seen"))
         last_seen_dt = _parse_datetime(last_seen_at)
@@ -637,20 +668,26 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
         priority_qualified = priority_score >= float(filter_config["priority_qualified_score"])
         follow_up_pending = _safe_str(execution.get("Follow-up Pending", "")).upper() == "TRUE"
 
+        detail = _match_detail_from_bucket(matches_by_lead.get(lead_id, {"match_count": 0, "slots": []}))
         item = {
             "lead_id": lead_id,
             "name": _safe_str(lead_values.get("Name")),
             "phone": _safe_str(lead_values.get("Contact Number")),
+            "lead_type": lead_type,
+            "entry_type": "Requirement" if lead_type == "Buyer" else "Property" if lead_type == "Seller" else "",
             "area": _safe_str(lead_values.get("Location")),
             "bhk": _normalize_numeric(lead_values.get("BHK")),
             "budget": _budget_text_from_values(lead_values),
-            "transaction_type": _safe_str(lead_values.get("Type")),
+            "transaction_type": _safe_str(lead_values.get("Transaction Type")),
             "priority": _priority_badge(StructuredLead(lead_values), float(filter_config["priority_qualified_score"])),
-            "match_count": "0",
+            "match_count": detail["match_count"],
             "strength": _strength_label(StructuredLead(lead_values), float(filter_config["priority_qualified_score"])),
             "last_interaction_date": _normalize_date(interaction_at or last_seen_at or lead_values.get("Date")),
-            "best_match_summary": "",
-            "match_reason": "",
+            "best_match_summary": detail["best_match_summary"],
+            "match_reason": detail["match_reason"],
+            "lead_date": _normalize_date(last_seen_at or lead_values.get("Date")),
+            "cleaned_message": _safe_str(lead_values.get("Cleaned Message")),
+            "raw_message": _safe_str(lead_values.get("Raw Message")),
             "status": _safe_str(execution.get("Status", "")),
             "notes": _safe_str(execution.get("Notes", "")),
             "next_follow_up": _safe_str(execution.get("Next Follow-up", "")),
@@ -663,15 +700,15 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
             "calc_in_today_view": "FALSE",
             "last_seen_at": last_seen_at,
             "updated_at": _safe_str(execution.get("Updated At", "")) or last_seen_at,
-            **_empty_match_detail(),
+            **detail,
         }
         item["calc_in_today_view"] = _normalize_bool(_lead_in_today_view(item, now, filter_config))
         items.append(item)
 
     items.sort(
         key=lambda entry: (
+            -float(entry.get("match_count") or 0),
             {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "UNRANKED": 3}.get(entry.get("priority", ""), 4),
-            -float(entry.get("bhk") or 0),
             entry.get("name", "").lower(),
         )
     )
@@ -701,16 +738,48 @@ def get_glide_view_dataset(
     *,
     mode: str = "today",
     search: str = "",
+    lead_type: str = "",
+    property_type: str = "",
+    from_date: date | None = None,
+    to_date: date | None = None,
     limit: int = 50,
     offset: int = 0,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     if mode not in {"today", "all"}:
         raise ValueError("mode must be 'today' or 'all'")
+    normalized_lead_type = _safe_str(lead_type).capitalize()
+    if normalized_lead_type and normalized_lead_type not in {"Buyer", "Seller"}:
+        raise ValueError("lead_type must be 'Buyer', 'Seller', or empty")
 
     items = _cached_glide_rows(client, now=now)
     if mode == "today":
         items = [item for item in items if item["calc_in_today_view"] == "TRUE"]
+    if normalized_lead_type:
+        items = [item for item in items if item.get("lead_type", "") == normalized_lead_type]
+    normalized_property_type = _safe_str(property_type).lower()
+    if normalized_property_type:
+        items = [
+            item
+            for item in items
+            if normalized_property_type in _safe_str(item.get("property_type", "")).lower()
+        ]
+    if from_date or to_date:
+        filtered_items: list[dict[str, str]] = []
+        for item in items:
+            item_date = _normalize_date(item.get("lead_date") or item.get("last_seen_at") or item.get("last_interaction_date"))
+            if not item_date:
+                continue
+            try:
+                parsed_item_date = date.fromisoformat(item_date)
+            except ValueError:
+                continue
+            if from_date and parsed_item_date < from_date:
+                continue
+            if to_date and parsed_item_date > to_date:
+                continue
+            filtered_items.append(item)
+        items = filtered_items
 
     term = _safe_str(search).lower()
     if term:
@@ -720,8 +789,6 @@ def get_glide_view_dataset(
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
     page = items[offset: offset + limit]
-    if hasattr(client, "_connect"):
-        page = _enrich_rows_with_match_counts(client, page)
     return {
         "mode": mode,
         "columns": list(GLIDE_VIEW_COLUMNS),
@@ -730,6 +797,8 @@ def get_glide_view_dataset(
         "page_size": limit,
         "offset": offset,
         "search": term,
+        "lead_type": normalized_lead_type,
+        "property_type": normalized_property_type,
     }
 
 

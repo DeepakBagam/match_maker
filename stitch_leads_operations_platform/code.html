@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Lead Detail Mobile</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: "#8e4a4b",
+            accent: "#575e71",
+            ink: "#201a1a",
+            soft: "#524344",
+            line: "#d7c1c2",
+            card: "#ffffff",
+            wash: "#fbf8f8",
+            blush: "#f8ebeb",
+            good: "#1f6b3a",
+          },
+          fontFamily: {
+            display: ["Playfair Display", "serif"],
+            body: ["Inter", "sans-serif"],
+          },
+          boxShadow: {
+            card: "0 12px 32px rgba(32, 26, 26, 0.08)",
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    .material-symbols-outlined {
+      font-variation-settings: "FILL" 0, "wght" 450, "GRAD" 0, "opsz" 24;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-[linear-gradient(180deg,#fff7f4_0%,#fbf8f8_38%,#f5eded_100%)] font-body text-ink">
+  <div class="mx-auto flex min-h-screen w-full max-w-md flex-col">
+    <header class="sticky top-0 z-20 border-b border-line bg-white/90 px-4 pb-4 pt-5 backdrop-blur">
+      <div class="flex items-center justify-between gap-3">
+        <a class="rounded-full border border-line bg-white p-2 text-soft" href="/">
+          <span class="material-symbols-outlined">arrow_back</span>
+        </a>
+        <div class="flex-1 text-center">
+          <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Lead Detail</p>
+          <h1 class="font-display text-2xl text-ink">Mobile Workspace</h1>
+        </div>
+        <button class="rounded-full border border-line bg-white p-2 text-soft" id="reloadBtn" type="button">
+          <span class="material-symbols-outlined">refresh</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="flex-1 px-4 pb-24 pt-4">
+      <div class="mb-4 rounded-2xl border border-line bg-white px-4 py-3 text-sm text-soft shadow-card" id="statusBox">Loading lead detail.</div>
+
+      <section class="rounded-3xl border border-line bg-white p-5 shadow-card">
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <p class="truncate font-display text-3xl text-ink" id="leadName">Lead</p>
+            <p class="mt-2 text-sm text-soft" id="leadMeta">-</p>
+            <p class="mt-1 text-sm text-soft" id="leadMeta2">-</p>
+          </div>
+          <span class="rounded-full bg-blush px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary" id="leadTypeBadge">Lead</span>
+        </div>
+
+        <div class="mt-5 grid grid-cols-2 gap-3 text-sm">
+          <div class="rounded-2xl bg-wash p-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Priority</p>
+            <p class="mt-2 font-semibold text-ink" id="leadPriority">-</p>
+          </div>
+          <div class="rounded-2xl bg-wash p-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Matches</p>
+            <p class="mt-2 font-semibold text-ink" id="leadMatchCount">-</p>
+          </div>
+        </div>
+
+        <div class="mt-5 grid grid-cols-2 gap-3">
+          <a class="rounded-2xl border border-line bg-white px-4 py-3 text-center text-sm font-semibold text-ink" href="#" id="callBtn">Call</a>
+          <a class="rounded-2xl bg-primary px-4 py-3 text-center text-sm font-semibold text-white" href="#" id="whatsappBtn">WhatsApp</a>
+        </div>
+        <button class="mt-3 w-full rounded-2xl bg-red-700 px-4 py-3 text-sm font-semibold text-white" id="deleteLeadBtn" type="button">Delete Lead</button>
+      </section>
+
+      <section class="mt-4 rounded-3xl border border-line bg-white p-5 shadow-card">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Cleaned Message</p>
+            <h2 class="mt-1 font-display text-2xl text-ink">Operator View</h2>
+          </div>
+          <button class="rounded-full border border-line bg-white p-2 text-soft" id="logWhatsappBtn" type="button">
+            <span class="material-symbols-outlined">chat</span>
+          </button>
+        </div>
+        <pre class="mt-4 whitespace-pre-wrap rounded-2xl bg-wash p-4 text-sm text-ink" id="cleanedMessage">-</pre>
+      </section>
+
+      <section class="mt-4 rounded-3xl border border-line bg-white p-5 shadow-card">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Best Matches</p>
+        <div class="mt-4 space-y-3" id="matchSlots"></div>
+      </section>
+
+      <section class="mt-4 rounded-3xl border border-line bg-white p-5 shadow-card">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Execution</p>
+            <h2 class="mt-1 font-display text-2xl text-ink">Follow-up State</h2>
+          </div>
+          <button class="rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-white" id="saveExecutionBtn" type="button">Save</button>
+        </div>
+
+        <div class="mt-4 space-y-3">
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="statusInput">Status</label>
+            <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="statusInput" type="text" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="nextFollowUpInput">Next Follow-up</label>
+            <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="nextFollowUpInput" type="date" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="nextActionInput">Next Action</label>
+            <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="nextActionInput" type="text" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="timingInput">Timing</label>
+            <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="timingInput" type="text" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="notesInput">Notes</label>
+            <textarea class="mt-2 h-28 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="notesInput"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section class="mt-4 rounded-3xl border border-line bg-white p-5 shadow-card">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Communication</p>
+        <div class="mt-4 space-y-3">
+          <select class="w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="templateSelect"></select>
+          <button class="w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink" id="generateMessageBtn" type="button">Generate WhatsApp Message</button>
+          <textarea class="h-36 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="generatedMessage" readonly></textarea>
+          <a class="block rounded-2xl bg-primary px-4 py-3 text-center text-sm font-semibold text-white" href="#" id="sendMessageBtn">Open WhatsApp</a>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const leadId = params.get("lead_id") || "";
+    let currentLead = null;
+
+    function setStatus(message, tone = "neutral") {
+      const box = document.getElementById("statusBox");
+      box.textContent = message;
+      box.className = "mb-4 rounded-2xl border px-4 py-3 text-sm shadow-card";
+      if (tone === "error") {
+        box.classList.add("border-red-200", "bg-red-50", "text-red-700");
+      } else if (tone === "success") {
+        box.classList.add("border-emerald-200", "bg-emerald-50", "text-emerald-700");
+      } else {
+        box.classList.add("border-line", "bg-white", "text-soft");
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    async function apiFetch(path, options = {}) {
+      const response = await fetch(`/api${path}`, options);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.detail || "Request failed.");
+      }
+      return body;
+    }
+
+    function normalizePhone(phone, allowPlus = false) {
+      const raw = String(phone || "").trim();
+      if (!raw) {
+        return "";
+      }
+      const digits = raw.replace(/\D/g, "");
+      if (!digits) {
+        return "";
+      }
+      return allowPlus && raw.startsWith("+") ? `+${digits}` : digits;
+    }
+
+    function fillExecution(lead) {
+      document.getElementById("statusInput").value = lead.status || "";
+      document.getElementById("nextFollowUpInput").value = lead.next_follow_up || "";
+      document.getElementById("nextActionInput").value = lead.next_action || "";
+      document.getElementById("timingInput").value = lead.timing || "";
+      document.getElementById("notesInput").value = lead.notes || "";
+    }
+
+    function renderMatches(lead) {
+      const slots = [1, 2, 3].map((index) => ({
+        summary: lead[`match_${index}_property_summary`] || "",
+        brokerName: lead[`match_${index}_broker_name`] || "",
+        brokerPhone: lead[`match_${index}_broker_phone`] || "",
+      })).filter((slot) => slot.summary || slot.brokerName || slot.brokerPhone);
+
+      const target = document.getElementById("matchSlots");
+      if (!slots.length) {
+        target.innerHTML = '<div class="rounded-2xl border border-dashed border-line bg-wash px-4 py-8 text-center text-sm text-soft">No fixed match slots available for this lead yet.</div>';
+        return;
+      }
+
+      target.innerHTML = slots.map((slot, index) => `
+        <article class="rounded-2xl bg-wash p-4">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Match ${index + 1}</p>
+          <p class="mt-2 font-semibold text-ink">${escapeHtml(slot.summary || "-")}</p>
+          <p class="mt-1 text-sm text-soft">${escapeHtml(slot.brokerName || "-")}${slot.brokerPhone ? ` | ${escapeHtml(slot.brokerPhone)}` : ""}</p>
+          <div class="mt-3 flex gap-2">
+            <a class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" href="${slot.brokerPhone ? `tel:${escapeHtml(String(slot.brokerPhone).replace(/[^\d+]/g, ""))}` : "#"}">Call Broker</a>
+            <a class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" href="${slot.brokerPhone ? `https://wa.me/${escapeHtml(String(slot.brokerPhone).replace(/\D/g, ""))}` : "#"}">WhatsApp Broker</a>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    function renderLead(lead) {
+      currentLead = lead;
+      document.getElementById("leadName").textContent = lead.name || "Unnamed Lead";
+      document.getElementById("leadMeta").textContent = `${lead.area || "No area"}${lead.bhk ? ` | ${lead.bhk} BHK` : ""}${lead.transaction_type ? ` | ${lead.transaction_type}` : ""}`;
+      document.getElementById("leadMeta2").textContent = `${lead.budget || "No budget"}${lead.phone ? ` | ${lead.phone}` : ""}`;
+      document.getElementById("leadTypeBadge").textContent = lead.lead_type || "Lead";
+      document.getElementById("leadPriority").textContent = lead.priority || "UNRANKED";
+      document.getElementById("leadMatchCount").textContent = `${lead.match_count || "0"} live matches`;
+      document.getElementById("cleanedMessage").textContent = lead.cleaned_message || "No cleaned message available.";
+      fillExecution(lead);
+      renderMatches(lead);
+
+      const phone = normalizePhone(lead.phone, true);
+      document.getElementById("callBtn").href = phone ? `tel:${phone}` : "#";
+      document.getElementById("whatsappBtn").href = phone ? `https://wa.me/${normalizePhone(lead.phone)}` : "#";
+    }
+
+    async function loadLead() {
+      if (!leadId) {
+        setStatus("lead_id is required in the URL.", "error");
+        return;
+      }
+      setStatus("Loading lead detail.");
+      const lead = await apiFetch(`/glide/view/${encodeURIComponent(leadId)}`);
+      renderLead(lead);
+      setStatus("Lead detail loaded from shared backend.", "success");
+    }
+
+    async function saveExecution() {
+      if (!leadId) {
+        setStatus("lead_id is missing.", "error");
+        return;
+      }
+      setStatus("Saving execution state.");
+      await apiFetch(`/glide/view/${encodeURIComponent(leadId)}/execution`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          status: document.getElementById("statusInput").value.trim(),
+          next_follow_up: document.getElementById("nextFollowUpInput").value || null,
+          next_action: document.getElementById("nextActionInput").value.trim(),
+          timing: document.getElementById("timingInput").value.trim(),
+          notes: document.getElementById("notesInput").value.trim(),
+        }),
+      });
+      setStatus("Execution state saved.", "success");
+      await loadLead();
+    }
+
+    async function logAction(action) {
+      if (!leadId) {
+        return;
+      }
+      await apiFetch(`/glide/view/${encodeURIComponent(leadId)}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+    }
+
+    async function loadTemplates() {
+      const payload = await apiFetch("/communication/templates");
+      const templates = (payload.templates || [])
+        .map((template) => {
+          if (typeof template === "string") {
+            return {
+              name: template,
+              label: template
+                .split("_")
+                .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+                .join(" "),
+            };
+          }
+          return {
+            name: template?.name || "",
+            label: template?.label || template?.name || "",
+          };
+        })
+        .filter((template) => ["welcome_message", "buyer_match_notification", "follow_up_reminder"].includes(template.name));
+      const select = document.getElementById("templateSelect");
+      if (!templates.length) {
+        select.innerHTML = '<option value="">No templates available</option>';
+        return;
+      }
+      select.innerHTML = ['<option value="">Select template</option>', ...templates.map((template) => `
+        <option value="${escapeHtml(template.name)}">${escapeHtml(template.label || template.name)}</option>
+      `)].join("");
+    }
+
+    async function generateMessage() {
+      if (!currentLead) {
+        setStatus("Load a lead first.", "error");
+        return;
+      }
+      const template = document.getElementById("templateSelect").value;
+      if (!template) {
+        setStatus("Choose a communication template first.", "error");
+        return;
+      }
+      setStatus("Generating WhatsApp message.");
+      const payload = await apiFetch("/communication/generate-message", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          template_name: template,
+          lead_id: leadId,
+          phone: currentLead.phone || "",
+        }),
+      });
+      document.getElementById("generatedMessage").value = payload.message || "";
+      document.getElementById("sendMessageBtn").href = payload.whatsapp_url || "#";
+      setStatus("WhatsApp message generated.", "success");
+    }
+
+    async function deleteLead() {
+      if (!leadId) {
+        setStatus("lead_id is missing.", "error");
+        return;
+      }
+      const confirmText = window.prompt(`Type DELETE to remove lead ${leadId}.`);
+      if (confirmText === null) {
+        return;
+      }
+      setStatus("Deleting lead.");
+      await apiFetch(`/glide/view/${encodeURIComponent(leadId)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: confirmText }),
+      });
+      setStatus("Lead deleted. Returning to mobile queue.", "success");
+      window.location.href = "/";
+    }
+
+    document.getElementById("reloadBtn").addEventListener("click", () => {
+      loadLead().catch((error) => setStatus(error.message, "error"));
+    });
+
+    document.getElementById("saveExecutionBtn").addEventListener("click", () => {
+      saveExecution().catch((error) => setStatus(error.message, "error"));
+    });
+
+    document.getElementById("generateMessageBtn").addEventListener("click", () => {
+      generateMessage().catch((error) => setStatus(error.message, "error"));
+    });
+
+    document.getElementById("deleteLeadBtn").addEventListener("click", () => {
+      deleteLead().catch((error) => setStatus(error.message, "error"));
+    });
+
+    document.getElementById("callBtn").addEventListener("click", () => {
+      logAction("call").catch(() => {});
+    });
+
+    document.getElementById("whatsappBtn").addEventListener("click", () => {
+      logAction("whatsapp").catch(() => {});
+    });
+
+    document.getElementById("logWhatsappBtn").addEventListener("click", () => {
+      logAction("whatsapp").catch(() => {});
+    });
+
+    Promise.all([loadLead(), loadTemplates()])
+      .then(() => setStatus("Lead detail ready.", "success"))
+      .catch((error) => setStatus(error.message, "error"));
+  </script>
+</body>
+</html>

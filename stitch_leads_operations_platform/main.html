@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Leads Mobile</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: "#8e4a4b",
+            accent: "#575e71",
+            ink: "#201a1a",
+            soft: "#524344",
+            line: "#d7c1c2",
+            card: "#ffffff",
+            wash: "#fbf8f8",
+            blush: "#f8ebeb",
+            good: "#1f6b3a",
+            goodbg: "#e9f7ee",
+            warm: "#fff3eb",
+          },
+          fontFamily: {
+            display: ["Playfair Display", "serif"],
+            body: ["Inter", "sans-serif"],
+          },
+          boxShadow: {
+            card: "0 12px 32px rgba(32, 26, 26, 0.08)",
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    .material-symbols-outlined {
+      font-variation-settings: "FILL" 0, "wght" 450, "GRAD" 0, "opsz" 24;
+    }
+    .hidden-panel[hidden] {
+      display: none;
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-[linear-gradient(180deg,#fff7f4_0%,#fbf8f8_38%,#f5eded_100%)] font-body text-ink">
+  <div class="mx-auto flex min-h-screen w-full max-w-md flex-col">
+    <header class="sticky top-0 z-20 border-b border-line bg-white/90 px-4 pb-4 pt-5 backdrop-blur">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Separate Mobile App</p>
+          <h1 class="font-display text-3xl text-ink">Leads</h1>
+          <p class="mt-1 text-sm text-soft">Queue, search, deals, and alerts on one mobile-first screen.</p>
+        </div>
+        <button class="rounded-full border border-line bg-white p-2 text-soft" id="refreshAllBtn" type="button">
+          <span class="material-symbols-outlined">refresh</span>
+        </button>
+      </div>
+
+      <div class="mt-4 grid grid-cols-4 gap-2 rounded-2xl bg-blush p-1">
+        <button class="section-tab rounded-xl px-3 py-2 text-sm font-semibold" data-section="queue" type="button">Queue</button>
+        <button class="section-tab rounded-xl px-3 py-2 text-sm font-semibold" data-section="search" type="button">Search</button>
+        <button class="section-tab rounded-xl px-3 py-2 text-sm font-semibold" data-section="deals" type="button">Deals</button>
+        <button class="section-tab rounded-xl px-3 py-2 text-sm font-semibold" data-section="alerts" type="button">Alerts</button>
+      </div>
+    </header>
+
+    <main class="flex-1 px-4 pb-24 pt-4">
+      <div class="mb-4 rounded-2xl border border-line bg-white px-4 py-3 text-sm text-soft shadow-card" id="statusBox">Loading mobile leads workspace.</div>
+
+      <section class="hidden-panel space-y-4" id="queueSection">
+        <div class="rounded-3xl border border-line bg-white p-4 shadow-card">
+          <div class="space-y-3">
+            <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="queueSearch">Lead Search</label>
+            <input class="w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="queueSearch" placeholder="Name, phone, area, broker" type="text" />
+          </div>
+
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <div>
+              <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="queueFromDate">From Date</label>
+              <input class="w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="queueFromDate" type="date" />
+            </div>
+            <div>
+              <label class="mb-2 block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="queueToDate">To Date</label>
+              <input class="w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="queueToDate" type="date" />
+            </div>
+          </div>
+
+          <div class="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <p class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-soft">Quick Filter</p>
+              <div class="grid grid-cols-2 gap-2">
+                <button class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" id="queueTodayBtn" type="button">Today</button>
+                <button class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" id="queueClearDatesBtn" type="button">Clear</button>
+              </div>
+            </div>
+            <div>
+              <p class="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-soft">Type</p>
+              <div class="grid grid-cols-3 gap-2 rounded-2xl bg-blush p-1">
+                <button class="lead-type-tab rounded-xl px-2 py-2 text-xs font-semibold" data-type="" type="button">All</button>
+                <button class="lead-type-tab rounded-xl px-2 py-2 text-xs font-semibold" data-type="Buyer" type="button">Buyer</button>
+                <button class="lead-type-tab rounded-xl px-2 py-2 text-xs font-semibold" data-type="Seller" type="button">Seller</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between text-sm">
+          <div class="font-semibold text-ink" id="queueMeta">0 leads</div>
+          <div class="text-soft" id="queuePageMeta">Page 1</div>
+        </div>
+
+        <div class="space-y-3" id="queueList"></div>
+
+        <div class="flex items-center gap-3">
+          <button class="flex-1 rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink shadow-card disabled:opacity-50" id="prevQueueBtn" type="button">Previous</button>
+          <button class="flex-1 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-card disabled:opacity-50" id="nextQueueBtn" type="button">Next</button>
+        </div>
+      </section>
+
+      <section class="hidden-panel space-y-4" hidden id="searchSection">
+        <div class="rounded-3xl border border-line bg-white p-4 shadow-card">
+          <div class="space-y-3">
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="searchQuery">Keyword</label>
+              <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="searchQuery" placeholder="Name, phone, society, landmark" type="text" />
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="searchLocation">Location</label>
+                <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="searchLocation" placeholder="Wakad" type="text" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="searchPropertyType">Property</label>
+                <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="searchPropertyType" placeholder="2 BHK" type="text" />
+              </div>
+            </div>
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <button class="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-card" id="runSearchBtn" type="button">Run Search</button>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink shadow-card" id="resetSearchBtn" type="button">Reset</button>
+          </div>
+        </div>
+
+        <div class="text-sm font-semibold text-ink" id="searchMeta">No search yet.</div>
+        <div class="space-y-3" id="searchResults"></div>
+      </section>
+
+      <section class="hidden-panel space-y-4" hidden id="dealsSection">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="font-display text-2xl text-ink">Deals Log</h2>
+            <p class="text-sm text-soft">Recent activity from the shared leads backend.</p>
+          </div>
+          <button class="rounded-full border border-line bg-white p-2 text-soft shadow-card" id="refreshDealsBtn" type="button">
+            <span class="material-symbols-outlined">sync</span>
+          </button>
+        </div>
+        <div class="space-y-3" id="dealsList"></div>
+      </section>
+
+      <section class="hidden-panel space-y-4" hidden id="alertsSection">
+        <div class="rounded-3xl border border-line bg-white p-4 shadow-card">
+          <h2 class="font-display text-2xl text-ink">Alerts Capture</h2>
+          <p class="mt-1 text-sm text-soft">Push a quick alert lead into the shared database.</p>
+          <div class="mt-4 space-y-3">
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="alertContact">Contact</label>
+              <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="alertContact" placeholder="Phone or name" type="text" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="alertSource">Source</label>
+              <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="alertSource" placeholder="Website" type="text" value="Website" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="alertTimestamp">Date</label>
+              <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="alertTimestamp" type="date" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="alertFollowUpMessage">Follow-up Message</label>
+              <textarea class="mt-2 h-28 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="alertFollowUpMessage"></textarea>
+            </div>
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <button class="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-card" id="saveAlertBtn" type="button">Save Alert</button>
+            <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink shadow-card" id="refreshAlertsBtn" type="button">Refresh List</button>
+          </div>
+        </div>
+
+        <div class="space-y-3" id="alertsList"></div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const state = {
+      section: "queue",
+      leadType: "",
+      queueSearch: "",
+      queueFromDate: "",
+      queueToDate: "",
+      queueRows: [],
+      queuePage: 1,
+      queuePageSize: 10,
+    };
+
+    function setStatus(message, tone = "neutral") {
+      const box = document.getElementById("statusBox");
+      box.textContent = message;
+      box.className = "mb-4 rounded-2xl border px-4 py-3 text-sm shadow-card";
+      if (tone === "error") {
+        box.classList.add("border-red-200", "bg-red-50", "text-red-700");
+      } else if (tone === "success") {
+        box.classList.add("border-emerald-200", "bg-emerald-50", "text-emerald-700");
+      } else {
+        box.classList.add("border-line", "bg-white", "text-soft");
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    async function apiFetch(path, options = {}) {
+      const response = await fetch(`/api${path}`, options);
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.detail || "Request failed.");
+      }
+      return body;
+    }
+
+    function updateSectionTabs() {
+      document.querySelectorAll(".section-tab").forEach((button) => {
+        const active = button.dataset.section === state.section;
+        button.className = active
+          ? "section-tab rounded-xl bg-white px-3 py-2 text-sm font-semibold text-ink shadow"
+          : "section-tab rounded-xl px-3 py-2 text-sm font-semibold text-soft";
+      });
+      document.querySelectorAll(".hidden-panel").forEach((section) => {
+        section.hidden = section.id !== `${state.section}Section`;
+      });
+    }
+
+    function updateQueueControls() {
+      document.querySelectorAll(".lead-type-tab").forEach((button) => {
+        const active = button.dataset.type === state.leadType;
+        button.className = active
+          ? "lead-type-tab rounded-xl bg-white px-2 py-2 text-xs font-semibold text-ink shadow"
+          : "lead-type-tab rounded-xl px-2 py-2 text-xs font-semibold text-soft";
+      });
+    }
+
+    function queuePagePayload() {
+      const totalPages = Math.max(1, Math.ceil(state.queueRows.length / state.queuePageSize));
+      state.queuePage = Math.min(Math.max(state.queuePage, 1), totalPages);
+      const start = (state.queuePage - 1) * state.queuePageSize;
+      return {
+        totalPages,
+        start,
+        rows: state.queueRows.slice(start, start + state.queuePageSize),
+      };
+    }
+
+    function renderQueue() {
+      const list = document.getElementById("queueList");
+      const { rows, totalPages, start } = queuePagePayload();
+      document.getElementById("queueMeta").textContent = `${state.queueRows.length} leads`;
+      document.getElementById("queuePageMeta").textContent = state.queueRows.length
+        ? `Showing ${start + 1}-${Math.min(start + state.queuePageSize, state.queueRows.length)} of ${state.queueRows.length} | Page ${state.queuePage}/${totalPages}`
+        : "No leads";
+      document.getElementById("prevQueueBtn").disabled = state.queuePage <= 1;
+      document.getElementById("nextQueueBtn").disabled = state.queuePage >= totalPages;
+
+      if (!rows.length) {
+        list.innerHTML = '<div class="rounded-3xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-soft">No leads matched the current mobile filters.</div>';
+        return;
+      }
+
+      list.innerHTML = rows.map((row) => `
+        <article class="rounded-3xl border border-line bg-white p-4 shadow-card">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="truncate font-display text-2xl text-ink">${escapeHtml(row.name || "Unnamed Lead")}</p>
+              <p class="mt-1 text-sm text-soft">${escapeHtml(row.area || "No location")}${row.bhk ? ` | ${escapeHtml(row.bhk)} BHK` : ""}${row.transaction_type ? ` | ${escapeHtml(row.transaction_type)}` : ""}</p>
+              <p class="mt-1 text-sm text-soft">${escapeHtml(row.budget || "No budget")}${row.phone ? ` | ${escapeHtml(row.phone)}` : ""}</p>
+            </div>
+            <span class="${row.lead_type === "Buyer" ? "bg-emerald-50 text-emerald-700" : "bg-warm text-primary"} rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">${escapeHtml(row.lead_type || "Lead")}</span>
+          </div>
+          <div class="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
+            <div class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">${escapeHtml(row.priority || "Unranked")} | ${escapeHtml(row.match_count || "0")} matches</div>
+            <div class="flex items-center gap-2">
+              <a class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" href="${row.phone ? `tel:${escapeHtml(String(row.phone).replace(/[^\d+]/g, ""))}` : "#"}">Call</a>
+              <a class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" href="${row.phone ? `https://wa.me/${escapeHtml(String(row.phone).replace(/\D/g, ""))}` : "#"}">WhatsApp</a>
+              <a class="rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-white" href="/lead?lead_id=${encodeURIComponent(row.lead_id || "")}">Open</a>
+            </div>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    async function loadQueue() {
+      setStatus("Loading queue.");
+      const query = new URLSearchParams();
+      query.set("mode", "all");
+      query.set("limit", "200");
+      if (state.leadType) {
+        query.set("lead_type", state.leadType);
+      }
+      if (state.queueSearch.trim()) {
+        query.set("search", state.queueSearch.trim());
+      }
+      if (state.queueFromDate) {
+        query.set("from_date", state.queueFromDate);
+      }
+      if (state.queueToDate) {
+        query.set("to_date", state.queueToDate);
+      }
+      const payload = await apiFetch(`/glide/view?${query.toString()}`);
+      state.queueRows = payload.rows || [];
+      renderQueue();
+      setStatus("Queue loaded from shared leads data.", "success");
+    }
+
+    function renderReferenceResults(rows) {
+      const target = document.getElementById("searchResults");
+      if (!rows.length) {
+        target.innerHTML = '<div class="rounded-3xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-soft">No reference rows found.</div>';
+        return;
+      }
+      target.innerHTML = rows.map((row) => `
+        <article class="rounded-3xl border border-line bg-white p-4 shadow-card">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <p class="font-semibold text-ink">${escapeHtml(row.Name || "-")}</p>
+              <p class="mt-1 text-sm text-soft">${escapeHtml(row.Location || "-")} | ${escapeHtml(row.Property_Type || "-")}</p>
+              <p class="mt-1 text-sm text-soft">${escapeHtml(row.Phone || "-")} | ${escapeHtml(row.Broker || "-")}</p>
+            </div>
+            <span class="rounded-full bg-blush px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">${escapeHtml(row.Lead_Type || "-")}</span>
+          </div>
+        </article>
+      `).join("");
+    }
+
+    async function runSearch() {
+      setStatus("Running reference search.");
+      const query = new URLSearchParams();
+      query.set("limit", "50");
+      if (document.getElementById("searchQuery").value.trim()) {
+        query.set("query", document.getElementById("searchQuery").value.trim());
+      }
+      if (document.getElementById("searchLocation").value.trim()) {
+        query.set("location", document.getElementById("searchLocation").value.trim());
+      }
+      if (document.getElementById("searchPropertyType").value.trim()) {
+        query.set("property_type", document.getElementById("searchPropertyType").value.trim());
+      }
+      const payload = await apiFetch(`/search?${query.toString()}`);
+      renderReferenceResults(payload.rows || []);
+      document.getElementById("searchMeta").textContent = `${payload.row_count || 0} reference leads found.`;
+      setStatus("Reference search loaded.", "success");
+    }
+
+    function renderDeals(rows) {
+      const target = document.getElementById("dealsList");
+      if (!rows.length) {
+        target.innerHTML = '<div class="rounded-3xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-soft">No deals log rows yet.</div>';
+        return;
+      }
+      target.innerHTML = rows.map((row) => `
+        <article class="rounded-3xl border border-line bg-white p-4 shadow-card">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">${escapeHtml(row.Timestamp || "-")}</p>
+          <p class="mt-2 font-semibold text-ink">${escapeHtml(row.Event_Type || "-")}</p>
+          <p class="mt-1 text-sm text-soft">${escapeHtml(row.Deal_Status || "-")} | ${escapeHtml(row.Lead_ID || "-")}</p>
+          <p class="mt-2 text-sm text-soft">${escapeHtml(row.Notes || "-")}</p>
+        </article>
+      `).join("");
+    }
+
+    async function loadDeals() {
+      setStatus("Loading deals log.");
+      const payload = await apiFetch("/glide/deals-log?limit=25");
+      renderDeals(payload.rows || []);
+      setStatus("Deals log loaded.", "success");
+    }
+
+    function renderAlerts(rows) {
+      const target = document.getElementById("alertsList");
+      if (!rows.length) {
+        target.innerHTML = '<div class="rounded-3xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-soft">No alerts captured yet.</div>';
+        return;
+      }
+      target.innerHTML = rows.map((row) => `
+        <article class="rounded-3xl border border-line bg-white p-4 shadow-card">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">${escapeHtml(row.Timestamp || "-")}</p>
+          <p class="mt-2 font-semibold text-ink">${escapeHtml(row.Contact || "-")}</p>
+          <p class="mt-1 text-sm text-soft">${escapeHtml(row.Source || "-")}</p>
+          <p class="mt-2 text-sm text-ink">${escapeHtml(row.Follow_Up_Message || "-")}</p>
+        </article>
+      `).join("");
+    }
+
+    async function loadAlerts() {
+      setStatus("Loading alerts list.");
+      const payload = await apiFetch("/glide/alerts-leads?limit=25");
+      renderAlerts(payload.rows || []);
+      setStatus("Alerts list loaded.", "success");
+    }
+
+    async function saveAlert() {
+      const contact = document.getElementById("alertContact").value.trim();
+      const source = document.getElementById("alertSource").value.trim() || "Website";
+      const timestamp = document.getElementById("alertTimestamp").value || null;
+      const followUpMessage = document.getElementById("alertFollowUpMessage").value.trim();
+      if (!contact) {
+        setStatus("Contact is required for alerts capture.", "error");
+        return;
+      }
+      setStatus("Saving alert lead.");
+      await apiFetch("/glide/alerts-leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contact, source, timestamp, follow_up_message: followUpMessage }),
+      });
+      document.getElementById("alertContact").value = "";
+      document.getElementById("alertTimestamp").value = "";
+      document.getElementById("alertFollowUpMessage").value = "";
+      setStatus("Alert lead saved.", "success");
+      await loadAlerts();
+    }
+
+    document.querySelectorAll(".section-tab").forEach((button) => {
+      button.addEventListener("click", async () => {
+        state.section = button.dataset.section || "queue";
+        updateSectionTabs();
+        if (state.section === "queue") {
+          await loadQueue();
+        } else if (state.section === "deals") {
+          await loadDeals();
+        } else if (state.section === "alerts") {
+          await loadAlerts();
+        }
+      });
+    });
+
+    document.querySelectorAll(".lead-type-tab").forEach((button) => {
+      button.addEventListener("click", async () => {
+        state.leadType = button.dataset.type || "";
+        state.queuePage = 1;
+        updateQueueControls();
+        await loadQueue();
+      });
+    });
+
+    document.getElementById("queueSearch").addEventListener("input", async (event) => {
+      state.queueSearch = event.target.value || "";
+      state.queuePage = 1;
+      await loadQueue();
+    });
+
+    document.getElementById("queueFromDate").addEventListener("change", async (event) => {
+      state.queueFromDate = event.target.value || "";
+      state.queuePage = 1;
+      await loadQueue();
+    });
+
+    document.getElementById("queueToDate").addEventListener("change", async (event) => {
+      state.queueToDate = event.target.value || "";
+      state.queuePage = 1;
+      await loadQueue();
+    });
+
+    document.getElementById("queueTodayBtn").addEventListener("click", async () => {
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+      state.queueFromDate = today;
+      state.queueToDate = today;
+      document.getElementById("queueFromDate").value = today;
+      document.getElementById("queueToDate").value = today;
+      state.queuePage = 1;
+      await loadQueue();
+    });
+
+    document.getElementById("queueClearDatesBtn").addEventListener("click", async () => {
+      state.queueFromDate = "";
+      state.queueToDate = "";
+      document.getElementById("queueFromDate").value = "";
+      document.getElementById("queueToDate").value = "";
+      state.queuePage = 1;
+      await loadQueue();
+    });
+
+    document.getElementById("prevQueueBtn").addEventListener("click", () => {
+      state.queuePage = Math.max(1, state.queuePage - 1);
+      renderQueue();
+    });
+
+    document.getElementById("nextQueueBtn").addEventListener("click", () => {
+      state.queuePage += 1;
+      renderQueue();
+    });
+
+    document.getElementById("runSearchBtn").addEventListener("click", runSearch);
+    document.getElementById("resetSearchBtn").addEventListener("click", () => {
+      document.getElementById("searchQuery").value = "";
+      document.getElementById("searchLocation").value = "";
+      document.getElementById("searchPropertyType").value = "";
+      document.getElementById("searchResults").innerHTML = "";
+      document.getElementById("searchMeta").textContent = "Search reset.";
+    });
+    document.getElementById("refreshDealsBtn").addEventListener("click", loadDeals);
+    document.getElementById("saveAlertBtn").addEventListener("click", saveAlert);
+    document.getElementById("refreshAlertsBtn").addEventListener("click", loadAlerts);
+    document.getElementById("refreshAllBtn").addEventListener("click", async () => {
+      if (state.section === "queue") {
+        await loadQueue();
+      } else if (state.section === "search") {
+        await runSearch();
+      } else if (state.section === "deals") {
+        await loadDeals();
+      } else {
+        await loadAlerts();
+      }
+    });
+
+    updateSectionTabs();
+    updateQueueControls();
+    loadQueue().catch((error) => setStatus(error.message, "error"));
+  </script>
+</body>
+</html>

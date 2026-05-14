@@ -88,6 +88,7 @@ def refresh_system(client: DatabaseClient) -> dict[str, Any]:
         _write_outputs(
             client,
             existing,
+            existing,
             validation_rows,
             final_validation_rows,
             matches,

@@ -97,10 +97,13 @@
         <nav class="flex items-center gap-2 rounded-full border border-[#E7D9CF] bg-[#FFF8F4] p-1">
           <button class="view-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-view-target="ingestion-view" type="button">Ingestion</button>
           <button class="view-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-view-target="data-view" type="button">Data</button>
-          <button class="view-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-view-target="glide-view" type="button">Glide</button>
+          <button class="view-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-view-target="glide-view" type="button">Leads</button>
         </nav>
       </div>
       <div class="flex items-center gap-3">
+        <button class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#E3DCD5] bg-white text-on-surface transition-colors hover:bg-[#FFF8F4]" id="openSettingsModalBtn" type="button" title="Settings">
+          <span class="material-symbols-outlined text-[20px]">settings</span>
+        </button>
         <button class="rounded-lg bg-[#CC703B] px-4 py-2 text-sm font-semibold text-white transition-transform active:scale-95" id="processAllBtn" type="button">
           Process All
         </button>
@@ -110,26 +113,9 @@
 
   <main class="mx-auto max-w-[1800px] px-6 py-8">
     <section class="app-view" id="ingestion-view">
-      <section class="mb-8" id="dashboard">
-        <h1 class="mb-1 text-3xl font-bold tracking-tight text-on-surface">Ingestion Dashboard</h1>
-        <p class="text-sm text-on-surface-variant">Streamline your data flow from WhatsApp exports to structured leads.</p>
-      </section>
-
-      <section class="relative mb-8 h-64 overflow-hidden rounded-xl border border-[#E3DCD5] bg-gradient-to-br from-[#FFF4EC] via-[#FCF7F1] to-[#F3ECE4] shadow-warm">
-        <div class="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(204,112,59,0.12),transparent_28%),radial-gradient(circle_at_80%_30%,rgba(148,69,18,0.10),transparent_22%),linear-gradient(135deg,transparent_0%,rgba(255,255,255,0.7)_100%)]"></div>
-        <div class="absolute inset-0 grid grid-cols-3 gap-4 p-6 opacity-30">
-          <div class="rounded-xl border border-white/60 bg-white/50"></div>
-          <div class="rounded-xl border border-white/60 bg-white/40"></div>
-          <div class="rounded-xl border border-white/60 bg-white/50"></div>
-          <div class="col-span-2 rounded-xl border border-white/60 bg-white/40"></div>
-          <div class="rounded-xl border border-white/60 bg-white/55"></div>
-        </div>
-        <div class="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-t from-white/85 to-transparent px-6 text-center">
-          <span class="mb-2 text-lg font-bold text-primary">Operational Suite Ready</span>
-          <p class="max-w-xl text-sm text-on-surface-variant">
-            Select an ingestion method below to begin processing chat data into your operational layers.
-          </p>
-        </div>
+      <section class="mb-8" id="ingestionHeader">
+        <h1 class="mb-1 text-3xl font-bold tracking-tight text-on-surface">Ingestion</h1>
+        <p class="text-sm text-on-surface-variant">Upload, paste, or enter leads manually, then track progress in one place.</p>
       </section>
 
       <section class="grid grid-cols-1 gap-5 md:grid-cols-3">
@@ -149,35 +135,28 @@
               <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="file-source" name="source" placeholder="Optional for one file only" type="text" />
             </div>
 
-            <div class="space-y-2">
-              <label class="block text-xs font-semibold text-on-surface-variant" for="file-upload">Files</label>
+            <div class="space-y-3">
+              <div class="flex items-center justify-between gap-3">
+                <label class="block text-xs font-semibold text-on-surface-variant" for="file-upload">Upload Mode</label>
+                <div class="inline-flex rounded-full border border-[#E3DCD5] bg-[#FFF8F4] p-1">
+                  <button class="upload-mode-pill rounded-full bg-[#CC703B] px-3 py-1.5 text-xs font-semibold text-white transition-colors" data-upload-mode="files" type="button">Upload Files</button>
+                  <button class="upload-mode-pill rounded-full px-3 py-1.5 text-xs font-semibold text-on-surface-variant transition-colors" data-upload-mode="folder" type="button">Upload Folder</button>
+                </div>
+              </div>
               <div class="rounded-xl border-2 border-dashed border-[#E3DCD5] p-4 transition-colors hover:bg-[#FCF8F4]">
                 <label class="flex cursor-pointer flex-col items-center justify-center gap-3 text-center" for="file-upload">
-                  <span class="material-symbols-outlined text-outline">cloud_upload</span>
+                  <span class="material-symbols-outlined text-outline" id="uploadModeIcon">cloud_upload</span>
                   <div>
-                    <div class="font-bold text-primary">Choose Files</div>
-                    <div class="text-xs text-on-surface-variant">Select one or more chat export files</div>
+                    <div class="font-bold text-primary" id="uploadModeTitle">Choose Files</div>
+                    <div class="text-xs text-on-surface-variant" id="uploadModeHint">Select one or more chat export files</div>
                   </div>
                 </label>
-                <input class="mt-3 w-full text-sm" id="file-upload" name="file" accept=".txt" multiple required type="file" />
+                <input class="mt-3 w-full text-sm" id="file-upload" name="file" accept=".txt,text/plain" multiple required type="file" />
+                <p class="mt-3 text-xs text-on-surface-variant" id="fileSelectionMeta">No files selected yet.</p>
               </div>
             </div>
 
-            <div class="space-y-2">
-              <label class="block text-xs font-semibold text-on-surface-variant" for="folder-upload">Folder</label>
-              <div class="rounded-xl border-2 border-dashed border-[#E3DCD5] p-4 transition-colors hover:bg-[#FCF8F4]">
-                <label class="flex cursor-pointer flex-col items-center justify-center gap-3 text-center" for="folder-upload">
-                  <span class="material-symbols-outlined text-outline">folder_open</span>
-                  <div>
-                    <div class="font-bold text-primary">Choose Folder</div>
-                    <div class="text-xs text-on-surface-variant">Upload 50-60 exports in one go</div>
-                  </div>
-                </label>
-                <input class="mt-3 w-full text-sm" id="folder-upload" name="file" accept=".txt,text/plain" directory multiple webkitdirectory type="file" />
-              </div>
-            </div>
-
-            <p class="text-xs text-on-surface-variant">For multiple files, Match Maker uses the filename or folder path automatically as the source.</p>
+            <p class="text-xs text-on-surface-variant">For multi-file or folder uploads, Match Maker derives the source from the filename or folder path automatically.</p>
           </div>
 
           <button class="mt-6 w-full rounded-lg bg-[#CC703B] py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#B35D29] active:scale-95" type="submit">
@@ -257,202 +236,6 @@
             Submit Lead
           </button>
         </form>
-      </section>
-
-      <section class="mt-8">
-        <div class="mb-5 flex flex-wrap gap-3">
-          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="dashboard-tab" type="button">Dashboard</button>
-          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="settings-tab" type="button">Settings</button>
-          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="control-tab" type="button">Control Layer</button>
-          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="run-log-tab" type="button">Run Log</button>
-          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="docs-tab" type="button">Documentation</button>
-          <button class="tab-link rounded-full px-4 py-2 text-sm font-semibold transition-colors" data-tab-target="support-tab" type="button">Support</button>
-        </div>
-
-        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="dashboard-tab">
-          <div class="grid gap-4 md:grid-cols-3">
-            <div class="rounded-xl bg-[#FFF8F4] p-4">
-              <h3 class="mb-2 text-sm font-semibold text-on-surface">WhatsApp Upload</h3>
-              <p class="text-sm text-on-surface-variant">Use this when you have one file, many files, or a full folder of exported chat `.txt` files.</p>
-            </div>
-            <div class="rounded-xl bg-[#FFF8F4] p-4">
-              <h3 class="mb-2 text-sm font-semibold text-on-surface">Paste Chat Data</h3>
-              <p class="text-sm text-on-surface-variant">Use this when you want to paste one group or multiple `Source:` blocks directly.</p>
-            </div>
-            <div class="rounded-xl bg-[#FFF8F4] p-4">
-              <h3 class="mb-2 text-sm font-semibold text-on-surface">Manual Lead Entry</h3>
-              <p class="text-sm text-on-surface-variant">Use this when you want to directly submit `name`, `phone`, `requirement`, `location`, `budget`, `notes`, and `source`.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="settings-tab" hidden>
-          <div class="mb-6 flex items-center justify-between">
-            <div>
-              <h2 class="text-xl font-semibold text-on-surface">System Settings</h2>
-              <p class="text-sm text-on-surface-variant">Configure matching, deduplication, and processing parameters</p>
-            </div>
-            <span class="material-symbols-outlined text-outline">settings</span>
-          </div>
-
-          <form id="settingsForm" class="space-y-6">
-            <div class="grid gap-6 md:grid-cols-2">
-              <div class="space-y-2">
-                <label class="block text-sm font-semibold text-on-surface" for="match_threshold">Match Threshold</label>
-                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="match_threshold" name="match_threshold" type="number" min="0" max="100" value="40" />
-                <p class="text-xs text-on-surface-variant">Minimum score (0-100) for buyer-seller matches to appear. Lower = more matches, higher = stronger matches only.</p>
-              </div>
-
-              <div class="space-y-2">
-                <label class="block text-sm font-semibold text-on-surface" for="dedup_window_days">Dedup Window (Days)</label>
-                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="dedup_window_days" name="dedup_window_days" type="number" min="0" max="30" value="1" />
-                <p class="text-xs text-on-surface-variant">How many days to consider duplicate messages. 0 = no dedup, 1 = same day, 7 = within week.</p>
-              </div>
-
-              <div class="space-y-2">
-                <label class="block text-sm font-semibold text-on-surface" for="lookback_days">Lookback Days</label>
-                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="lookback_days" name="lookback_days" type="number" min="0" max="365" value="0" />
-                <p class="text-xs text-on-surface-variant">Only process messages from last N days. 0 = process all messages.</p>
-              </div>
-
-              <div class="space-y-2">
-                <label class="block text-sm font-semibold text-on-surface" for="top_leads_count">Top Leads Count</label>
-                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="top_leads_count" name="top_leads_count" type="number" min="5" max="100" value="10" />
-                <p class="text-xs text-on-surface-variant">Number of top prioritized leads to show.</p>
-              </div>
-
-              <div class="space-y-2">
-                <label class="block text-sm font-semibold text-on-surface" for="top_leads_validation_size">Top Leads Validation Size</label>
-                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="top_leads_validation_size" name="top_leads_validation_size" type="number" min="5" max="100" value="10" />
-                <p class="text-xs text-on-surface-variant">Number of top leads to show in validation checkpoint for review.</p>
-              </div>
-
-              <div class="space-y-2">
-                <label class="block text-sm font-semibold text-on-surface" for="glide_activity_window_days">Glide Activity Window (Days)</label>
-                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="glide_activity_window_days" name="glide_activity_window_days" type="number" min="1" max="365" value="120" />
-                <p class="text-xs text-on-surface-variant">Lead must be active within this many days to qualify for Glide Today.</p>
-              </div>
-
-              <div class="space-y-2">
-                <label class="block text-sm font-semibold text-on-surface" for="glide_recent_interaction_days">Glide Recent Interaction (Days)</label>
-                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="glide_recent_interaction_days" name="glide_recent_interaction_days" type="number" min="1" max="365" value="30" />
-                <p class="text-xs text-on-surface-variant">Recent interaction boolean is TRUE only within this DB-controlled window.</p>
-              </div>
-
-              <div class="space-y-2">
-                <label class="block text-sm font-semibold text-on-surface" for="glide_priority_qualified_score">Glide Priority Qualified Score</label>
-                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="glide_priority_qualified_score" name="glide_priority_qualified_score" type="number" min="0" max="100" value="60" />
-                <p class="text-xs text-on-surface-variant">Priority-qualified boolean is TRUE only when Priority Score meets this threshold.</p>
-              </div>
-            </div>
-
-            <div class="flex gap-3">
-              <button type="submit" class="rounded-lg bg-[#CC703B] px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#B35D29] active:scale-95">
-                Save Settings
-              </button>
-              <button type="button" id="loadSettingsBtn" class="rounded-lg border border-[#E3DCD5] bg-white px-6 py-2.5 text-sm font-semibold text-on-surface shadow-sm transition-all hover:bg-[#FFF8F4] active:scale-95">
-                Load Current
-              </button>
-              <button type="button" id="resetSettingsBtn" class="rounded-lg border border-[#E3DCD5] bg-white px-6 py-2.5 text-sm font-semibold text-on-surface shadow-sm transition-all hover:bg-[#FFF8F4] active:scale-95">
-                Reset to Default
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="control-tab" hidden>
-          <div class="mb-4 flex items-center justify-between">
-            <div>
-              <h2 class="text-xl font-semibold text-on-surface">Control Layer</h2>
-              <p class="text-sm text-on-surface-variant">The runtime logic is controlled through database tables, not through dummy UI pages.</p>
-            </div>
-            <span class="material-symbols-outlined text-outline">tune</span>
-          </div>
-          <div class="grid gap-4 md:grid-cols-3">
-            <div class="rounded-xl bg-[#FFF8F4] p-4">
-              <h3 class="mb-2 text-sm font-semibold text-on-surface">Config</h3>
-              <p class="text-sm text-on-surface-variant">Controls `lookback_days`, `match_threshold`, `dedup_window_days`, and validation sample sizes.</p>
-            </div>
-            <div class="rounded-xl bg-[#FFF8F4] p-4">
-              <h3 class="mb-2 text-sm font-semibold text-on-surface">Location Mapping</h3>
-              <p class="text-sm text-on-surface-variant">Maps raw area names into canonical locations using aliases and optional tags.</p>
-            </div>
-            <div class="rounded-xl bg-[#FFF8F4] p-4">
-              <h3 class="mb-2 text-sm font-semibold text-on-surface">Property Mapping</h3>
-              <p class="text-sm text-on-surface-variant">Normalizes property terms such as flat, apartment, office, or commercial labels.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="docs-tab" hidden>
-          <div class="mb-4 flex items-center gap-3">
-            <span class="material-symbols-outlined text-[#CC703B]">menu_book</span>
-            <h2 class="text-xl font-semibold text-on-surface">Documentation</h2>
-          </div>
-          <ul class="space-y-2 text-sm text-on-surface-variant">
-            <li>WhatsApp upload accepts one or more `.txt` files using the same `file` field.</li>
-            <li>Folder upload works in browsers that support directory selection.</li>
-            <li>Manual entry sends `name`, `phone`, `requirement`, `location`, `budget`, `notes`, and `source`.</li>
-            <li>Data management reads directly from the database structured dataset.</li>
-          </ul>
-        </div>
-
-        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="support-tab" hidden>
-          <div class="mb-4 flex items-center gap-3">
-            <span class="material-symbols-outlined text-[#CC703B]">support</span>
-            <h2 class="text-xl font-semibold text-on-surface">Support</h2>
-          </div>
-          <ul class="space-y-2 text-sm text-on-surface-variant">
-            <li>If uploads fail, check that the file extension is `.txt`.</li>
-            <li>If writes fail, inspect the Last Response panel for the database error.</li>
-            <li>If data view is empty, process or sync a dataset first.</li>
-            <li>Use the Last Response panel below to inspect API status and error details.</li>
-          </ul>
-        </div>
-
-        <div class="tab-panel rounded-xl border border-[#E3DCD5] bg-white p-6 shadow-warm" data-tab-panel="run-log-tab" hidden>
-          <div class="mb-4 flex items-center justify-between gap-4">
-            <div>
-              <div class="flex items-center gap-3">
-                <span class="material-symbols-outlined text-[#CC703B]">history</span>
-                <h2 class="text-xl font-semibold text-on-surface">Run Log</h2>
-              </div>
-              <p class="mt-2 text-sm text-on-surface-variant">Track all pipeline execution runs with detailed metrics and status.</p>
-            </div>
-            <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="refreshRunLogBtn" type="button">Refresh</button>
-          </div>
-          
-          <div class="overflow-x-auto rounded-2xl border border-grid bg-[#FFFCFA]">
-            <table class="min-w-full text-left text-sm">
-              <thead class="bg-[#F7EAE0] text-xs font-bold uppercase tracking-[0.14em] text-on-surface">
-                <tr>
-                  <th class="border-b border-r border-grid px-4 py-3">Run ID</th>
-                  <th class="border-b border-r border-grid px-4 py-3">Start Time</th>
-                  <th class="border-b border-r border-grid px-4 py-3">End Time</th>
-                  <th class="border-b border-r border-grid px-4 py-3">Duration</th>
-                  <th class="border-b border-r border-grid px-4 py-3">Processed</th>
-                  <th class="border-b border-r border-grid px-4 py-3">New</th>
-                  <th class="border-b border-r border-grid px-4 py-3">Duplicates</th>
-                  <th class="border-b border-r border-grid px-4 py-3">Ignored</th>
-                  <th class="border-b border-r border-grid px-4 py-3">Matches</th>
-                  <th class="border-b border-r border-grid px-4 py-3">Status</th>
-                  <th class="border-b border-grid px-4 py-3">Error</th>
-                </tr>
-              </thead>
-              <tbody id="runLogTableBody">
-                <tr>
-                  <td class="px-4 py-10 text-center text-sm text-on-surface-variant" colspan="11">Loading run log...</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          
-          <div class="mt-4 flex items-center justify-between gap-3">
-            <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="prevRunLogPageBtn" type="button">Previous</button>
-            <div class="text-sm text-on-surface-variant" id="runLogPageMeta">Showing 0 to 0</div>
-            <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="nextRunLogPageBtn" type="button">Next</button>
-          </div>
-        </div>
       </section>
     </section>
 
@@ -580,41 +363,85 @@
           <div>
             <div class="mb-2 inline-flex items-center gap-2 rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-primary">
               <span class="material-symbols-outlined text-base">deployed_code</span>
-              Glide Workspace
+              Leads Workspace
             </div>
-            <h1 class="text-3xl font-black tracking-tight text-on-surface">Glide Leads</h1>
-            <p class="mt-2 max-w-3xl text-sm text-on-surface-variant">Fast working view for active leads, lead detail, and execution updates.</p>
+            <h1 class="text-3xl font-black tracking-tight text-on-surface">Leads</h1>
+            <p class="mt-2 max-w-3xl text-sm text-on-surface-variant">Active queue, buyer/seller filtering, lead detail, and reference search in one workspace.</p>
           </div>
           <div class="flex flex-wrap items-center gap-3">
             <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" id="refreshGlideBtn" type="button">
-              Refresh Glide View
+              Refresh Leads
             </button>
           </div>
         </div>
       </div>
 
-      <section class="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
+      <section class="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)] xl:items-start">
         <div class="space-y-6">
           <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm">
             <div class="flex items-center justify-between gap-4">
               <div>
                 <h2 class="text-xl font-semibold text-on-surface">Lead Queue</h2>
-                <p class="mt-1 text-sm text-on-surface-variant">Use the lists below to open a lead and work it immediately.</p>
+                <p class="mt-1 text-sm text-on-surface-variant">Switch between Today and All Leads, then separate buyers and sellers without leaving the main queue.</p>
               </div>
               <span class="rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">FAST MODE</span>
             </div>
-            <div class="mt-4 grid gap-4 md:grid-cols-2">
-              <div class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="font-semibold text-on-surface">Today</h3>
-                <p class="mt-1 text-sm text-on-surface-variant">Active leads only. Search by name, area, or broker.</p>
+            <div class="mt-4 rounded-2xl border border-[#EAD8CB] bg-[#FFF9F5] px-4 py-3 text-sm text-on-surface-variant" id="glideStatusNote">
+              Loading leads...
+            </div>
+            <div class="mt-4 flex flex-wrap items-center gap-3">
+              <button class="rounded-full bg-[#CC703B] px-4 py-2 text-sm font-semibold text-white" id="leadsTabQueueBtn" type="button">Queue</button>
+              <button class="rounded-full border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface" id="leadsTabSearchBtn" type="button">Search</button>
+              <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="glideLeadCount">0 leads</span>
+            </div>
+            <div class="mt-4" id="queueTabPanel">
+              <div class="grid gap-3 lg:grid-cols-[160px_180px_220px_minmax(0,1fr)]">
+                <select class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="leadViewFilter">
+                  <option value="today">Today</option>
+                  <option value="all">All Leads</option>
+                </select>
+                <select class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="leadTypeFilter">
+                  <option value="">Buyers + Sellers</option>
+                  <option value="Buyer">Buyers Only</option>
+                  <option value="Seller">Sellers Only</option>
+                </select>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="leadPropertyFilter" placeholder="Filter property type" type="search" />
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="leadSearch" placeholder="Search name, phone, area, broker, or transaction type" type="search" />
               </div>
-              <div class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="font-semibold text-on-surface">All Leads</h3>
-                <p class="mt-1 text-sm text-on-surface-variant">Full lead list when you need to go beyond today’s queue.</p>
+              <div class="mt-3 grid gap-3 lg:grid-cols-[minmax(0,180px)_minmax(0,180px)_auto_auto_auto_minmax(0,1fr)]">
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="leadFromDate" type="date" />
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="leadToDate" type="date" />
+                <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="applyLeadDateFilterBtn" type="button">Apply Dates</button>
+                <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="todayLeadDateFilterBtn" type="button">Today</button>
+                <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="clearLeadDateFilterBtn" type="button">Clear</button>
+                <div class="flex items-center justify-end text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="leadDateFilterMeta">All lead dates</div>
+              </div>
+              <p class="mt-3 text-xs text-on-surface-variant">Available matches reflect live precomputed buyer-seller pairings for the lead shown in the queue.</p>
+              <div class="mt-4 space-y-3" id="glideLeadList"></div>
+              <div class="mt-4 flex items-center justify-between gap-3">
+                <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="prevLeadPageBtn" type="button">Previous</button>
+                <div class="text-sm text-on-surface-variant" id="leadPageMeta">Showing 0 to 0</div>
+                <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="nextLeadPageBtn" type="button">Next</button>
               </div>
             </div>
-            <div class="mt-4 rounded-2xl border border-[#EAD8CB] bg-[#FFF9F5] px-4 py-3 text-sm text-on-surface-variant" id="glideStatusNote">
-              Loading Glide leads...
+            <div class="mt-4 hidden" id="searchTabPanel">
+              <div class="grid gap-3 xl:grid-cols-[minmax(0,1.2fr)_180px_minmax(0,1fr)_220px_220px]">
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="searchQuery" placeholder="Search name, phone, location, society, broker..." type="search" />
+                <select class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="searchEntryType">
+                  <option value="">All Types</option>
+                  <option value="Property">Properties</option>
+                  <option value="Requirement">Requirements</option>
+                </select>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="searchBroker" placeholder="Broker name or phone" type="search" />
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="searchLocation" placeholder="Search exact location" type="search" />
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="searchPropertyType" placeholder="Search property type" type="search" />
+              </div>
+              <div class="mt-3 flex flex-wrap items-center gap-3">
+                <button class="rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#B35D29]" id="runReferenceSearchBtn" type="button">Run Search</button>
+                <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="resetReferenceSearchBtn" type="button">Reset</button>
+                <span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="referenceSearchMeta">Reference only. No ranking, prioritisation, or matching logic.</span>
+              </div>
+              <div class="mt-4 space-y-3" id="searchResults"></div>
             </div>
             <div class="mt-4 rounded-2xl border border-[#E3DCD5] bg-white p-4" hidden>
               <div class="flex items-center justify-between gap-4">
@@ -642,23 +469,9 @@
                 Include ONLY if activity window is TRUE and at least one of follow-up pending, priority qualified, or recent interaction is TRUE.
               </div>
             </div>
-            <div class="mt-4 grid gap-4 md:grid-cols-3" hidden>
-              <div class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="font-semibold text-on-surface">Glide_View</h3>
-                <p class="mt-1 text-sm text-on-surface-variant">DB-derived filtered dataset with precomputed match fields.</p>
-              </div>
-              <div class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="font-semibold text-on-surface">Deals Log</h3>
-                <p class="mt-1 text-sm text-on-surface-variant">Manual high-signal memory table for meaningful deal events only.</p>
-              </div>
-              <div class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="font-semibold text-on-surface">Alerts Leads</h3>
-                <p class="mt-1 text-sm text-on-surface-variant">Append-only website-capture table with `Timestamp`, `Contact`, `Source`.</p>
-              </div>
-            </div>
           </section>
 
-          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm">
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm" hidden>
             <div class="mb-4 flex items-center justify-between gap-4">
               <div>
                 <h2 class="text-xl font-semibold text-on-surface">Today</h2>
@@ -672,7 +485,7 @@
             <div class="space-y-3" id="glideTodayList"></div>
           </section>
 
-          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm">
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm" hidden>
             <div class="mb-4 flex items-center justify-between gap-4">
               <div>
                 <h2 class="text-xl font-semibold text-on-surface">All Leads</h2>
@@ -697,12 +510,13 @@
               <span class="rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary" id="glideDetailLeadId">No lead selected</span>
             </div>
 
-            <div class="space-y-5" id="glideDetailWrap">
+            <div class="space-y-4" id="glideDetailWrap">
               <section class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">1. Summary</h3>
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">Summary</h3>
                 <div class="mt-3 grid gap-3 sm:grid-cols-2">
                   <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Name</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailName">-</p></div>
                   <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Phone</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailPhone">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Lead Type</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailLeadType">-</p></div>
                   <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Area</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailArea">-</p></div>
                   <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Budget</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailBudget">-</p></div>
                   <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">BHK</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailBhk">-</p></div>
@@ -710,45 +524,40 @@
               </section>
 
               <section class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">2. Lead Quality</h3>
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">Execution Snapshot</h3>
                 <div class="mt-3 grid gap-3 sm:grid-cols-2">
                   <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Priority</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailPriority">-</p></div>
                   <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Strength</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailStrength">-</p></div>
                   <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Last Interaction</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailLastInteraction">-</p></div>
-                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Active Within Window</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailCalcActiveWindow">-</p></div>
-                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Recent Interaction</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailCalcRecentInteraction">-</p></div>
-                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Priority Qualified</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailCalcPriorityQualified">-</p></div>
-                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Follow-up Pending</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailCalcFollowUpPending">-</p></div>
-                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Included In Today</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailCalcInTodayView">-</p></div>
+                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Available Matches</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailMatchCount" title="Live count of currently available buyer-seller matches for this lead.">-</p></div>
                 </div>
               </section>
 
               <section class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">3. Why This Lead</h3>
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">Why This Lead</h3>
                 <div class="mt-3 grid gap-3">
-                  <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Match Count</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailMatchCount">-</p></div>
                   <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Best Match Summary</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailBestMatch">-</p></div>
                   <div><p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Match Reason</p><p class="mt-1 text-sm font-semibold text-on-surface" id="detailMatchReason">-</p></div>
                 </div>
               </section>
 
               <section class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">4. Matching Properties</h3>
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">Live Matches</h3>
                 <div class="mt-3 space-y-3">
                   <div class="rounded-2xl border border-[#E3DCD5] bg-white p-4">
-                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Block 1</p>
+                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Match 1</p>
                     <p class="mt-2 text-sm font-semibold text-on-surface" id="detailMatch1Summary">-</p>
                     <p class="mt-1 text-sm text-on-surface-variant" id="detailMatch1Broker">-</p>
                     <a class="mt-3 inline-flex rounded-lg bg-[#CC703B] px-3 py-2 text-xs font-semibold text-white" href="#" id="detailMatch1Call">Call Broker</a>
                   </div>
                   <div class="rounded-2xl border border-[#E3DCD5] bg-white p-4">
-                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Block 2</p>
+                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Match 2</p>
                     <p class="mt-2 text-sm font-semibold text-on-surface" id="detailMatch2Summary">-</p>
                     <p class="mt-1 text-sm text-on-surface-variant" id="detailMatch2Broker">-</p>
                     <a class="mt-3 inline-flex rounded-lg bg-[#CC703B] px-3 py-2 text-xs font-semibold text-white" href="#" id="detailMatch2Call">Call Broker</a>
                   </div>
                   <div class="rounded-2xl border border-[#E3DCD5] bg-white p-4">
-                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Block 3</p>
+                    <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Match 3</p>
                     <p class="mt-2 text-sm font-semibold text-on-surface" id="detailMatch3Summary">-</p>
                     <p class="mt-1 text-sm text-on-surface-variant" id="detailMatch3Broker">-</p>
                     <a class="mt-3 inline-flex rounded-lg bg-[#CC703B] px-3 py-2 text-xs font-semibold text-white" href="#" id="detailMatch3Call">Call Broker</a>
@@ -757,7 +566,7 @@
               </section>
 
               <section class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">5. Execution</h3>
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">Execution</h3>
                 <div class="mt-3 grid gap-3 sm:grid-cols-2">
                   <div class="space-y-2">
                     <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailStatusInput">Status</label>
@@ -779,10 +588,6 @@
                     <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailNextActionInput">Next Action</label>
                     <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="detailNextActionInput" placeholder="e.g., Call, Site Visit, Send Docs" type="text" />
                   </div>
-                  <div class="space-y-2">
-                    <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailTimingInput">Timing</label>
-                    <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="detailTimingInput" placeholder="e.g., Morning, 2-4 PM" type="text" />
-                  </div>
                   <div class="space-y-2 sm:col-span-2">
                     <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailNotesInput">Notes</label>
                     <textarea class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="detailNotesInput" rows="4"></textarea>
@@ -797,16 +602,17 @@
               </section>
 
               <section class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">6. Actions</h3>
+                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">Actions</h3>
                 <div class="mt-3 flex flex-wrap gap-3">
                   <a class="inline-flex rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface" href="#" id="detailCallLead">Call Lead</a>
                   <a class="inline-flex rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white" href="#" id="detailWhatsappLead">WhatsApp Lead</a>
+                  <button class="inline-flex rounded-lg bg-[#B42318] px-4 py-2.5 text-sm font-semibold text-white" id="detailDeleteLeadBtn" type="button">Delete Lead</button>
                 </div>
               </section>
 
-              <section class="rounded-2xl bg-[#FFF8F4] p-4">
-                <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">7. Communication Templates</h3>
-                <p class="mt-2 text-sm text-on-surface-variant">Generate WhatsApp-ready messages from templates</p>
+              <details class="rounded-2xl border border-[#E3DCD5] bg-white p-4">
+                <summary class="cursor-pointer text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">Message Templates</summary>
+                <p class="mt-2 text-sm text-on-surface-variant">Generate WhatsApp-ready messages when needed, without crowding the main execution flow.</p>
                 <div class="mt-3 space-y-3">
                   <div class="space-y-2">
                     <label class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" for="detailTemplateSelect">Template</label>
@@ -828,7 +634,7 @@
                     </a>
                   </div>
                 </div>
-              </section>
+              </details>
             </div>
           </section>
 
@@ -897,9 +703,23 @@
               </a>
               <p class="mt-2 text-center text-xs text-on-surface-variant">Click to open your email client</p>
             </div>
-            
-            <div class="flex flex-col gap-3 sm:flex-row">
+
+            <div class="grid gap-3 md:grid-cols-2">
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="alertsFilterFromDate" type="date" />
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="alertsFilterToDate" type="date" />
+            </div>
+            <div class="mt-3 flex flex-wrap gap-3">
+              <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="applyAlertsFilterBtn" type="button">Apply Date Filter</button>
+              <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="todayAlertsFilterBtn" type="button">Today</button>
+              <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="clearAlertsFilterBtn" type="button">Clear Filter</button>
+            </div>
+
+            <div class="mt-4 grid gap-3 md:grid-cols-2">
               <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="alertsContactInput" placeholder="Email or Phone" type="text" />
+              <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="alertsTimestampInput" type="date" />
+              <textarea class="md:col-span-2 w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="alertsFollowUpMessageInput" placeholder="Follow-up message" rows="3"></textarea>
+            </div>
+            <div class="mt-3 flex flex-col gap-3 sm:flex-row">
               <button class="rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#B35D29]" id="saveAlertsLeadBtn" type="button">Capture Alert</button>
             </div>
             <div class="mt-3 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="alertsLeadsMeta">No alerts capture yet.</div>
@@ -913,9 +733,33 @@
       <div class="mb-4 flex items-center justify-between gap-4">
         <div>
           <h2 class="text-xl font-semibold text-on-surface">Activity Output</h2>
-          <p class="text-sm text-on-surface-variant">Request status and error details for ingestion and settings actions.</p>
+          <p class="text-sm text-on-surface-variant">Live progress, processing stages, and request details for ingestion actions.</p>
         </div>
         <span class="rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold text-primary">LIVE OUTPUT</span>
+      </div>
+      <div class="mb-5 rounded-2xl border border-[#EAD8CB] bg-[#FFF9F5] p-4" id="ingestProgressCard">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">Processing Stage</p>
+            <p class="mt-1 text-lg font-semibold text-on-surface" id="ingestProgressLabel">Idle</p>
+            <p class="mt-1 text-sm text-on-surface-variant" id="ingestProgressMeta">No ingestion job running.</p>
+          </div>
+          <div class="flex flex-wrap gap-2 text-xs font-semibold uppercase tracking-[0.14em]">
+            <span class="rounded-full bg-white px-3 py-1 text-on-surface-variant" id="ingestProgressPercent">0%</span>
+            <span class="rounded-full bg-white px-3 py-1 text-on-surface-variant" id="ingestProgressCount">0 rows</span>
+            <span class="rounded-full bg-white px-3 py-1 text-on-surface-variant" id="ingestProgressEta">ETA --</span>
+          </div>
+        </div>
+        <div class="mt-4 h-3 overflow-hidden rounded-full bg-[#F1E2D6]">
+          <div class="h-full rounded-full bg-gradient-to-r from-[#CC703B] via-[#D48B5D] to-[#944512] transition-all duration-300" id="ingestProgressBar" style="width: 0%"></div>
+        </div>
+        <div class="mt-4 grid gap-2 sm:grid-cols-5" id="ingestStageTracker">
+          <div class="rounded-2xl border border-[#E3DCD5] bg-white px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" data-stage-chip="upload">Upload</div>
+          <div class="rounded-2xl border border-[#E3DCD5] bg-white px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" data-stage-chip="parse">Parse</div>
+          <div class="rounded-2xl border border-[#E3DCD5] bg-white px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" data-stage-chip="extract">Extract</div>
+          <div class="rounded-2xl border border-[#E3DCD5] bg-white px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" data-stage-chip="match">Match</div>
+          <div class="rounded-2xl border border-[#E3DCD5] bg-white px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant" data-stage-chip="complete">Complete</div>
+        </div>
       </div>
       <pre class="overflow-auto rounded-xl bg-[#211913] p-4 text-sm text-[#F7E7D5]" id="out">No requests yet.</pre>
     </section>
@@ -999,24 +843,109 @@
     </div>
   </div>
 
+  <div class="modal fixed inset-0 z-[100] bg-[#2B211C]/55 px-4 py-6 backdrop-blur-sm" id="leadMessageModal" hidden>
+    <div class="mx-auto max-w-3xl rounded-3xl border border-[#E7D9CF] bg-white shadow-2xl">
+      <div class="flex items-start justify-between gap-4 border-b border-[#F1E4DA] px-6 py-5">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-[0.16em] text-primary">Lead Message</p>
+          <h2 class="mt-1 text-2xl font-bold text-on-surface" id="leadMessageModalTitle">Lead Message</h2>
+          <p class="mt-2 text-sm text-on-surface-variant">Full cleaned message for manual review.</p>
+        </div>
+        <button class="rounded-full border border-[#E3DCD5] p-2 text-on-surface-variant transition-colors hover:bg-[#FFF8F4]" id="closeLeadMessageModalBtn" type="button">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="space-y-4 px-6 py-6">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">Cleaned Message</p>
+          <pre class="mt-2 whitespace-pre-wrap rounded-2xl border border-[#E3DCD5] bg-[#FFFCFA] p-4 text-sm text-on-surface" id="leadMessageModalBody">-</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fixed inset-0 z-[100] bg-[#2B211C]/55 px-4 py-6 backdrop-blur-sm" id="settingsModal" hidden>
+    <div class="mx-auto flex min-h-full max-w-4xl items-center justify-center">
+      <div class="w-full rounded-[28px] border border-[#E3DCD5] bg-white shadow-[0_24px_60px_rgba(35,26,17,0.18)]">
+        <div class="flex items-start justify-between gap-4 border-b border-[#F0E4DA] px-6 py-5">
+          <div>
+            <h2 class="text-xl font-semibold text-on-surface">System Settings</h2>
+            <p class="mt-1 text-sm text-on-surface-variant">Configure matching, deduplication, and processing parameters.</p>
+          </div>
+          <button class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#E3DCD5] bg-white text-on-surface transition-colors hover:bg-[#FFF8F4]" id="closeSettingsModalBtn" type="button">
+            <span class="material-symbols-outlined text-[20px]">close</span>
+          </button>
+        </div>
+        <div class="max-h-[75vh] overflow-y-auto px-6 py-5">
+          <form id="settingsForm" class="space-y-6">
+            <div class="grid gap-6 md:grid-cols-2">
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="match_threshold">Match Threshold</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="match_threshold" name="match_threshold" type="number" min="0" max="100" value="40" />
+                <p class="text-xs text-on-surface-variant">Minimum score (0-100) for buyer-seller matches to appear. Lower = more matches, higher = stronger matches only.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="dedup_window_days">Dedup Window (Days)</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="dedup_window_days" name="dedup_window_days" type="number" min="0" max="30" value="1" />
+                <p class="text-xs text-on-surface-variant">How many days to consider duplicate messages. 0 = no dedup, 1 = same day, 7 = within week.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="lookback_days">Lookback Days</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="lookback_days" name="lookback_days" type="number" min="0" max="365" value="365" />
+                <p class="text-xs text-on-surface-variant">Only keep and process messages from the last N days. If left blank or set to 0, the system defaults to 365 days.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="top_leads_count">Top Leads Count</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="top_leads_count" name="top_leads_count" type="number" min="5" max="100" value="10" />
+                <p class="text-xs text-on-surface-variant">Number of top prioritized leads to show.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="top_leads_validation_size">Top Leads Validation Size</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="top_leads_validation_size" name="top_leads_validation_size" type="number" min="5" max="100" value="10" />
+                <p class="text-xs text-on-surface-variant">Number of top leads to show in validation checkpoint for review.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="glide_activity_window_days">Glide Activity Window (Days)</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="glide_activity_window_days" name="glide_activity_window_days" type="number" min="1" max="365" value="120" />
+                <p class="text-xs text-on-surface-variant">Lead must be active within this many days to qualify for Glide Today.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="glide_recent_interaction_days">Glide Recent Interaction (Days)</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="glide_recent_interaction_days" name="glide_recent_interaction_days" type="number" min="1" max="365" value="30" />
+                <p class="text-xs text-on-surface-variant">Recent interaction boolean is TRUE only within this DB-controlled window.</p>
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-sm font-semibold text-on-surface" for="glide_priority_qualified_score">Glide Priority Qualified Score</label>
+                <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="glide_priority_qualified_score" name="glide_priority_qualified_score" type="number" min="0" max="100" value="60" />
+                <p class="text-xs text-on-surface-variant">Priority-qualified boolean is TRUE only when Priority Score meets this threshold.</p>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+              <button type="submit" class="rounded-lg bg-[#CC703B] px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#B35D29] active:scale-95">
+                Save Settings
+              </button>
+              <button type="button" id="loadSettingsBtn" class="rounded-lg border border-[#E3DCD5] bg-white px-6 py-2.5 text-sm font-semibold text-on-surface shadow-sm transition-all hover:bg-[#FFF8F4] active:scale-95">
+                Load Current
+              </button>
+              <button type="button" id="resetSettingsBtn" class="rounded-lg border border-[#E3DCD5] bg-white px-6 py-2.5 text-sm font-semibold text-on-surface shadow-sm transition-all hover:bg-[#FFF8F4] active:scale-95">
+                Reset to Default
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
-    function activateTab(tabId) {
-      document.querySelectorAll("[data-tab-panel]").forEach((panel) => {
-        panel.hidden = panel.dataset.tabPanel !== tabId;
-      });
-
-      document.querySelectorAll(".tab-link").forEach((link) => {
-        const active = link.dataset.tabTarget === tabId;
-        link.classList.toggle("bg-[#CC703B]", active);
-        link.classList.toggle("text-white", active);
-        link.classList.toggle("shadow-sm", active);
-        link.classList.toggle("bg-white", !active);
-        link.classList.toggle("text-stone-600", !active);
-        link.classList.toggle("ring-1", !active);
-        link.classList.toggle("ring-[#E3DCD5]", !active);
-      });
-    }
-
     function setView(viewId) {
       document.querySelectorAll(".app-view").forEach((view) => {
         view.hidden = view.id !== viewId;
@@ -1121,7 +1050,137 @@
       document.getElementById("response").scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
+    function setStageChipState(activeStage, progress) {
+      const stageOrder = ["upload", "parse", "extract", "match", "complete"];
+      const activeIndex = stageOrder.indexOf(activeStage);
+      document.querySelectorAll("[data-stage-chip]").forEach((chip) => {
+        const chipStage = chip.dataset.stageChip;
+        const chipIndex = stageOrder.indexOf(chipStage);
+        chip.className = "rounded-2xl border border-[#E3DCD5] bg-white px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant";
+        if (chipStage === activeStage) {
+          chip.classList.add("border-[#CC703B]", "bg-[#FFF1E7]", "text-primary");
+          return;
+        }
+        if (activeIndex >= 0 && chipIndex < activeIndex) {
+          chip.classList.add("border-[#D8E7D6]", "bg-[#F5FBF3]", "text-[#265C2E]");
+          return;
+        }
+        if (activeStage === "complete" && progress >= 100) {
+          chip.classList.add("border-[#D8E7D6]", "bg-[#F5FBF3]", "text-[#265C2E]");
+        }
+      });
+    }
+
+    function estimateEtaText(progress) {
+      if (!jobState.startedAt || progress <= 0 || progress >= 100) {
+        return "ETA --";
+      }
+      const elapsedMs = Date.now() - jobState.startedAt;
+      const estimatedTotalMs = elapsedMs / (progress / 100);
+      const remainingMs = Math.max(0, estimatedTotalMs - elapsedMs);
+      const remainingSeconds = Math.round(remainingMs / 1000);
+      if (remainingSeconds < 60) {
+        return `ETA ${remainingSeconds}s`;
+      }
+      const minutes = Math.floor(remainingSeconds / 60);
+      const seconds = remainingSeconds % 60;
+      return `ETA ${minutes}m ${seconds}s`;
+    }
+
+    function setIngestProgress({
+      label = "Idle",
+      message = "No ingestion job running.",
+      progress = 0,
+      stage = "",
+      processedRows = 0,
+      totalRows = 0,
+    } = {}) {
+      document.getElementById("ingestProgressLabel").textContent = label;
+      document.getElementById("ingestProgressMeta").textContent = message;
+      document.getElementById("ingestProgressBar").style.width = `${Math.max(0, Math.min(100, progress))}%`;
+      document.getElementById("ingestProgressPercent").textContent = `${Math.max(0, Math.min(100, progress))}%`;
+      document.getElementById("ingestProgressCount").textContent = totalRows
+        ? `${processedRows}/${totalRows} rows`
+        : `${processedRows || 0} rows`;
+      document.getElementById("ingestProgressEta").textContent = estimateEtaText(progress);
+      setStageChipState(stage, progress);
+    }
+
+    function resetIngestProgress() {
+      jobState.startedAt = 0;
+      setIngestProgress();
+    }
+
+    function updateIngestProgressFromJob(job) {
+      const stageMap = {
+        queued: "upload",
+        running: "parse",
+        prepare: "parse",
+        parse: "parse",
+        dedup: "parse",
+        extract: "extract",
+        match: "match",
+        write: "match",
+        complete: "complete",
+        failed: "complete",
+      };
+      const label = job.stage_label || job.status || "Running";
+      setIngestProgress({
+        label,
+        message: job.message || "Processing...",
+        progress: Number(job.progress || 0),
+        stage: stageMap[job.stage] || "parse",
+        processedRows: Number(job.processed_rows || 0),
+        totalRows: Number(job.total_rows || 0),
+      });
+    }
+
+    function updateFileSelectionMeta() {
+      const input = document.getElementById("file-upload");
+      const mode = fileUploadState.mode;
+      const count = input?.files?.length || 0;
+      const label = mode === "folder" ? "folder items" : "files";
+      document.getElementById("fileSelectionMeta").textContent = count
+        ? `${count} ${label} selected.`
+        : "No files selected yet.";
+    }
+
+    function setUploadMode(mode) {
+      fileUploadState.mode = mode === "folder" ? "folder" : "files";
+      const input = document.getElementById("file-upload");
+      const title = document.getElementById("uploadModeTitle");
+      const hint = document.getElementById("uploadModeHint");
+      const icon = document.getElementById("uploadModeIcon");
+      document.querySelectorAll(".upload-mode-pill").forEach((button) => {
+        const active = button.dataset.uploadMode === fileUploadState.mode;
+        button.classList.toggle("bg-[#CC703B]", active);
+        button.classList.toggle("text-white", active);
+        button.classList.toggle("text-on-surface-variant", !active);
+      });
+      if (fileUploadState.mode === "folder") {
+        input.setAttribute("webkitdirectory", "");
+        input.setAttribute("directory", "");
+        input.removeAttribute("accept");
+        title.textContent = "Choose Folder";
+        hint.textContent = "Select one folder containing many chat exports";
+        icon.textContent = "folder_open";
+      } else {
+        input.removeAttribute("webkitdirectory");
+        input.removeAttribute("directory");
+        input.setAttribute("accept", ".txt,text/plain");
+        title.textContent = "Choose Files";
+        hint.textContent = "Select one or more chat export files";
+        icon.textContent = "cloud_upload";
+      }
+      input.value = "";
+      updateFileSelectionMeta();
+    }
+
     function stopJobPolling() {
+      if (jobState.eventSource) {
+        jobState.eventSource.close();
+        jobState.eventSource = null;
+      }
       if (jobState.pollHandle) {
         window.clearTimeout(jobState.pollHandle);
         jobState.pollHandle = null;
@@ -1134,10 +1193,12 @@
 
       if (!res.ok) {
         stopJobPolling();
+        updateIngestProgressFromJob({ stage: "failed", stage_label: "Failed", progress: 100, message: body.detail || "Job failed." });
         writeResponse(res.status, body);
         return;
       }
 
+      updateIngestProgressFromJob(body);
       if (body.status !== jobState.lastStatus || body.status === "success" || body.status === "failure") {
         writeResponse(res.status, body);
         jobState.lastStatus = body.status || "";
@@ -1153,7 +1214,6 @@
       stopJobPolling();
       if (body.status === "success") {
         glideState.needsRefresh = true;
-        await loadRunLog();
         if (!document.getElementById("data-view").hidden) {
           await loadData();
         }
@@ -1167,6 +1227,35 @@
       stopJobPolling();
       jobState.activeJobId = jobId;
       jobState.lastStatus = "";
+      if ("EventSource" in window) {
+        const source = new EventSource(`/jobs/${encodeURIComponent(jobId)}/events`);
+        jobState.eventSource = source;
+        source.addEventListener("progress", async (event) => {
+          const payload = JSON.parse(event.data || "{}");
+          updateIngestProgressFromJob(payload);
+          if (payload.status !== jobState.lastStatus || payload.status === "success" || payload.status === "failure") {
+            writeResponse(payload.status === "failure" ? 500 : 200, payload);
+            jobState.lastStatus = payload.status || "";
+          }
+          if (payload.status === "success") {
+            stopJobPolling();
+            glideState.needsRefresh = true;
+            if (!document.getElementById("data-view").hidden) {
+              await loadData();
+            }
+            if (!document.getElementById("glide-view").hidden) {
+              await loadGlideView(true);
+            }
+          } else if (payload.status === "failure") {
+            stopJobPolling();
+          }
+        });
+        source.onerror = () => {
+          stopJobPolling();
+          pollJob(jobId);
+        };
+        return;
+      }
       pollJob(jobId);
     }
 
@@ -1179,6 +1268,25 @@
         e.preventDefault();
         const out = document.getElementById("out");
         out.textContent = "Queueing...";
+        jobState.startedAt = Date.now();
+        if (formId === "fileForm") {
+          const fileCount = document.getElementById("file-upload")?.files?.length || 0;
+          setIngestProgress({
+            label: "Uploading",
+            message: fileCount ? `Uploading ${fileCount} file${fileCount === 1 ? "" : "s"} for processing.` : "Uploading files for processing.",
+            progress: 6,
+            stage: "upload",
+            processedRows: 0,
+            totalRows: fileCount,
+          });
+        } else {
+          setIngestProgress({
+            label: "Queueing",
+            message: "Sending ingestion request to the server.",
+            progress: 6,
+            stage: "upload",
+          });
+        }
         try {
           const data = new FormData(form);
           data.set("background", "true");
@@ -1187,11 +1295,30 @@
           writeResponse(res.status, body);
           if (res.status === 202 && body.job_id) {
             glideState.needsRefresh = true;
+            updateIngestProgressFromJob({
+              stage: "queued",
+              stage_label: "Queued",
+              progress: 10,
+              message: body.message || "Job queued.",
+            });
             trackJob(body.job_id);
+          } else if (!res.ok) {
+            updateIngestProgressFromJob({
+              stage: "failed",
+              stage_label: "Failed",
+              progress: 100,
+              message: body.detail || "Request failed.",
+            });
           }
         } catch (error) {
           writeResponse(500, {
             detail: error instanceof Error ? error.message : "Request failed before the server could respond.",
+          });
+          updateIngestProgressFromJob({
+            stage: "failed",
+            stage_label: "Failed",
+            progress: 100,
+            message: error instanceof Error ? error.message : "Request failed before the server could respond.",
           });
         }
       });
@@ -1211,6 +1338,9 @@
       loaded: false,
       gridMaximized: false,
       activeCell: { row: 0, col: 0 },
+      activeFilterColumn: "",
+      activeFilterSelectionStart: null,
+      activeFilterSelectionEnd: null,
       tab: "Structured Data",
       fromDate: "",
       toDate: "",
@@ -1222,25 +1352,41 @@
       columnFilters: {},
     };
 
-    const runLogState = {
-      offset: 0,
-      pageSize: 50,
-      totalRows: 0,
-    };
-
     const jobState = {
       activeJobId: "",
       pollHandle: null,
+      eventSource: null,
       lastStatus: "",
+      startedAt: 0,
+    };
+
+    const fileUploadState = {
+      mode: "files",
     };
 
     const glideState = {
       todayRows: [],
       allRows: [],
+      queueMode: "today",
+      leadTypeFilter: "",
+      leadSearch: "",
+      leadPropertyFilter: "",
+      leadFromDate: "",
+      leadToDate: "",
+      queuePage: 1,
+      queuePageSize: 10,
+      activeTab: "queue",
+      queueSearchHandle: null,
+      referenceRows: [],
+      referenceOffset: 0,
+      referenceFiltersLoaded: false,
       selectedLeadId: "",
       selectedDetail: null,
       dealsLogRows: [],
       alertsLeadRows: [],
+      alertsFromDate: "",
+      alertsToDate: "",
+      modeFilterKeys: { today: "", all: "" },
       filterConfig: null,
       todaySearch: "",
       allSearch: "",
@@ -1248,6 +1394,7 @@
       loaded: false,
       loading: false,
       needsRefresh: true,
+      loadedModes: new Set(),
       todaySearchHandle: null,
       allSearchHandle: null,
     };
@@ -1451,27 +1598,57 @@
     function renderGlideList(containerId, rows) {
       const container = document.getElementById(containerId);
       if (!rows.length) {
-        container.innerHTML = `<div class="rounded-2xl border border-dashed border-[#E3DCD5] bg-[#FFFCFA] px-4 py-8 text-center text-sm text-on-surface-variant">No Glide leads match the current search.</div>`;
+        container.innerHTML = `<div class="rounded-2xl border border-dashed border-[#E3DCD5] bg-[#FFFCFA] px-4 py-8 text-center text-sm text-on-surface-variant">No leads match the current filters.</div>`;
         return;
       }
       container.innerHTML = rows.map((row) => `
-        <button class="w-full rounded-2xl border border-[#E3DCD5] bg-[#FFFCFA] p-4 text-left transition-colors hover:bg-[#FFF6EF]" type="button" data-glide-lead-id="${escapeAttribute(row.lead_id)}">
+        <article class="rounded-2xl border border-[#E3DCD5] bg-[#FFFCFA] p-4">
           <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div class="min-w-0">
-              <p class="text-base font-semibold text-on-surface">${escapeHtml(row.name || "Unnamed Lead")}</p>
-              <p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(row.area || "No Area")}${row.bhk ? ` | ${escapeHtml(row.bhk)} BHK` : ""}</p>
-              <p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(row.budget || "No Budget")}</p>
-            </div>
+            <button class="min-w-0 flex-1 text-left transition-colors hover:bg-[#FFF6EF]" type="button" data-glide-lead-id="${escapeAttribute(row.lead_id)}">
+              <div class="flex flex-wrap items-center gap-2">
+                <p class="text-base font-semibold text-on-surface">${escapeHtml(row.name || "Unnamed Lead")}</p>
+                <span class="rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${row.lead_type === "Buyer" ? "bg-[#ECF7EE] text-[#22613B]" : "bg-[#FFF1E7] text-primary"}">${escapeHtml(row.lead_type || "Lead")}</span>
+                <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row.entry_type || "-")}</span>
+                <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row.lead_date || "-")}</span>
+              </div>
+              <p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(row.area || "No Area")}${row.bhk ? ` | ${escapeHtml(row.bhk)} BHK` : ""}${row.transaction_type ? ` | ${escapeHtml(row.transaction_type)}` : ""}</p>
+              <p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(row.budget || "No Budget")}${row.phone ? ` | ${escapeHtml(row.phone)}` : ""}</p>
+            </button>
             <div class="flex flex-wrap items-center gap-2">
+              <button class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#E3DCD5] bg-white text-on-surface transition-colors hover:bg-[#FFF8F4]" type="button" data-glide-message-id="${escapeAttribute(row.lead_id)}" title="View cleaned message">
+                <span class="material-symbols-outlined text-[18px]">info</span>
+              </button>
               <span class="rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">${escapeHtml(row.priority || "UNRANKED")}</span>
-              <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row.match_count || "0")} matches</span>
+              <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" title="Live count of precomputed buyer-seller matches">${escapeHtml(row.match_count || "0")} live matches</span>
             </div>
           </div>
-        </button>
+        </article>
       `).join("");
       container.querySelectorAll("[data-glide-lead-id]").forEach((button) => {
         button.addEventListener("click", () => loadGlideLeadDetail(button.dataset.glideLeadId));
       });
+      container.querySelectorAll("[data-glide-message-id]").forEach((button) => {
+        button.addEventListener("click", () => openLeadMessageModal(button.dataset.glideMessageId));
+      });
+    }
+
+    function getLeadById(leadId) {
+      return [...glideState.todayRows, ...glideState.allRows].find((row) => row.lead_id === leadId) || null;
+    }
+
+    function openLeadMessageModal(leadId) {
+      const lead = getLeadById(leadId);
+      if (!lead) {
+        setGlideStatus("Lead message is not available.", "error");
+        return;
+      }
+      document.getElementById("leadMessageModalTitle").textContent = lead.name || lead.lead_id || "Lead Message";
+      document.getElementById("leadMessageModalBody").textContent = lead.cleaned_message || "No cleaned message available.";
+      document.getElementById("leadMessageModal").hidden = false;
+    }
+
+    function closeLeadMessageModal() {
+      document.getElementById("leadMessageModal").hidden = true;
     }
 
     function normalizePhone(phone, allowPlus = false) {
@@ -1512,24 +1689,23 @@
       document.getElementById("glideDetailLeadId").textContent = detail ? detail.lead_id : "No lead selected";
       document.getElementById("detailName").textContent = detail?.name || "-";
       document.getElementById("detailPhone").textContent = detail?.phone || "-";
+      document.getElementById("detailLeadType").textContent = detail?.lead_type ? `${detail.lead_type} | ${detail.entry_type || "-"}` : "-";
       document.getElementById("detailArea").textContent = detail?.area || "-";
       document.getElementById("detailBudget").textContent = detail?.budget || "-";
       document.getElementById("detailBhk").textContent = detail?.bhk || "-";
       document.getElementById("detailPriority").textContent = detail?.priority || "-";
       document.getElementById("detailStrength").textContent = detail?.strength || "-";
       document.getElementById("detailLastInteraction").textContent = detail?.last_interaction_date || "-";
-      document.getElementById("detailCalcActiveWindow").textContent = detail?.calc_active_within_120_days || "-";
-      document.getElementById("detailCalcRecentInteraction").textContent = detail?.calc_recent_interaction || "-";
-      document.getElementById("detailCalcPriorityQualified").textContent = detail?.calc_priority_qualified || "-";
-      document.getElementById("detailCalcFollowUpPending").textContent = detail?.calc_follow_up_pending || "-";
-      document.getElementById("detailCalcInTodayView").textContent = detail?.calc_in_today_view || "-";
       document.getElementById("detailMatchCount").textContent = detail?.match_count || "0";
       document.getElementById("detailBestMatch").textContent = detail?.best_match_summary || "-";
       document.getElementById("detailMatchReason").textContent = detail?.match_reason || "-";
       document.getElementById("detailStatusInput").value = detail?.status || "";
       document.getElementById("detailNextFollowUpInput").value = detail?.next_follow_up || "";
       document.getElementById("detailNextActionInput").value = detail?.next_action || "";
-      document.getElementById("detailTimingInput").value = detail?.timing || "";
+      const timingInput = document.getElementById("detailTimingInput");
+      if (timingInput) {
+        timingInput.value = detail?.timing || "";
+      }
       document.getElementById("detailNotesInput").value = detail?.notes || "";
       document.getElementById("detailExecutionMeta").textContent = detail?.updated_at
         ? `Updated ${detail.updated_at}${detail.write_sync_error === "TRUE" ? " | Sync error flagged" : ""}`
@@ -1570,8 +1746,11 @@
         notes: document.getElementById("detailNotesInput").value || "",
         next_follow_up: document.getElementById("detailNextFollowUpInput").value || null,
         next_action: document.getElementById("detailNextActionInput").value || "",
-        timing: document.getElementById("detailTimingInput").value || "",
       };
+      const timingInput = document.getElementById("detailTimingInput");
+      if (timingInput) {
+        payload.timing = timingInput.value || "";
+      }
       const res = await fetch(`/glide/view/${encodeURIComponent(glideState.selectedDetail.lead_id)}/execution`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1604,6 +1783,32 @@
       } else if (!res.ok) {
         setGlideStatus(body.detail || `Failed to log Glide ${action} action.`, "error");
       }
+    }
+
+    async function deleteSelectedLead() {
+      if (!glideState.selectedDetail?.lead_id) {
+        setGlideStatus("Select a lead before deleting.", "error");
+        return;
+      }
+      const confirmText = window.prompt(`Type DELETE to remove lead ${glideState.selectedDetail.lead_id}.`);
+      if (confirmText === null) {
+        return;
+      }
+      const res = await fetch(`/glide/view/${encodeURIComponent(glideState.selectedDetail.lead_id)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: confirmText }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGlideStatus(body.detail || "Failed to delete lead.", "error");
+        return;
+      }
+      glideState.selectedLeadId = "";
+      renderGlideDetail(null);
+      glideState.needsRefresh = true;
+      await loadGlideView(true);
+      setGlideStatus(body.message || "Lead deleted successfully.", "success");
     }
 
     function renderGlideReadiness(payload) {
@@ -1663,23 +1868,106 @@
             <span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row["Timestamp"] || "")}</span>
           </div>
           <p class="mt-1 text-sm text-on-surface-variant">Source: ${escapeHtml(row["Source"] || "-")}</p>
+          <p class="mt-2 text-sm text-on-surface">${escapeHtml(row["Follow_Up_Message"] || "-")}</p>
         </div>
       `).join("");
+    }
+
+    function getAppTodayIsoDate() {
+      const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      const parts = formatter.formatToParts(new Date()).reduce((acc, part) => {
+        acc[part.type] = part.value;
+        return acc;
+      }, {});
+      return `${parts.year}-${parts.month}-${parts.day}`;
     }
 
     async function loadGlideList(mode, search = "") {
       const query = new URLSearchParams();
       query.set("mode", mode);
-      query.set("limit", "50");
+      query.set("limit", "200");
       if (search.trim()) {
         query.set("search", search.trim());
+      }
+      if (glideState.leadTypeFilter) {
+        query.set("lead_type", glideState.leadTypeFilter);
+      }
+      if (glideState.leadPropertyFilter.trim()) {
+        query.set("property_type", glideState.leadPropertyFilter.trim());
+      }
+      if (glideState.leadFromDate) {
+        query.set("from_date", glideState.leadFromDate);
+      }
+      if (glideState.leadToDate) {
+        query.set("to_date", glideState.leadToDate);
       }
       const res = await fetch(`/glide/view?${query.toString()}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(body.detail || "Failed to load Glide view.");
+        throw new Error(body.detail || "Failed to load leads view.");
       }
       return body;
+    }
+
+    async function ensureGlideModeLoaded(mode, search = "") {
+      const normalizedSearch = search.trim();
+      const filterKey = JSON.stringify({
+        search: normalizedSearch,
+        leadType: glideState.leadTypeFilter,
+        propertyType: glideState.leadPropertyFilter.trim(),
+        fromDate: glideState.leadFromDate,
+        toDate: glideState.leadToDate,
+      });
+      const cachedSearch = mode === "today" ? glideState.todaySearch : glideState.allSearch;
+      const shouldReload = !glideState.loadedModes.has(mode) || cachedSearch !== normalizedSearch || glideState.modeFilterKeys[mode] !== filterKey;
+      if (!shouldReload) {
+        return;
+      }
+      const payload = await loadGlideList(mode, normalizedSearch);
+      applyGlideListPayload(mode, payload);
+      glideState.loadedModes.add(mode);
+      glideState.modeFilterKeys[mode] = filterKey;
+      if (mode === "today") {
+        glideState.todaySearch = normalizedSearch;
+      } else {
+        glideState.allSearch = normalizedSearch;
+      }
+    }
+
+    function getActiveQueueRows() {
+      return glideState.queueMode === "today" ? glideState.todayRows : glideState.allRows;
+    }
+
+    function getPaginatedLeadRows(rows) {
+      const totalPages = Math.max(1, Math.ceil(rows.length / glideState.queuePageSize));
+      glideState.queuePage = Math.min(Math.max(glideState.queuePage, 1), totalPages);
+      const startIndex = (glideState.queuePage - 1) * glideState.queuePageSize;
+      return {
+        pageRows: rows.slice(startIndex, startIndex + glideState.queuePageSize),
+        totalPages,
+        startIndex,
+      };
+    }
+
+    function renderActiveLeadList() {
+      const rows = getActiveQueueRows();
+      const label = glideState.queueMode === "today" ? "Today" : "All Leads";
+      const { pageRows, totalPages, startIndex } = getPaginatedLeadRows(rows);
+      document.getElementById("glideLeadCount").textContent = `${rows.length} ${label}`;
+      document.getElementById("leadPageMeta").textContent = rows.length
+        ? `Showing ${startIndex + 1} to ${Math.min(startIndex + glideState.queuePageSize, rows.length)} of ${rows.length} | Page ${glideState.queuePage} of ${totalPages}`
+        : "Showing 0 to 0";
+      document.getElementById("prevLeadPageBtn").disabled = glideState.queuePage <= 1;
+      document.getElementById("nextLeadPageBtn").disabled = glideState.queuePage >= totalPages;
+      document.getElementById("leadDateFilterMeta").textContent = glideState.leadFromDate || glideState.leadToDate
+        ? `Lead dates ${glideState.leadFromDate || "Start"} to ${glideState.leadToDate || "End"}`
+        : "All lead dates";
+      renderGlideList("glideLeadList", pageRows);
     }
 
     function applyGlideListPayload(mode, payload) {
@@ -1687,40 +1975,135 @@
       if (mode === "today") {
         glideState.todayRows = rows;
         document.getElementById("glideTodayCount").textContent = `${payload.row_count || 0} leads`;
-        renderGlideList("glideTodayList", rows);
+        document.getElementById("glideLeadCount").dataset.todayCount = String(payload.row_count || 0);
+        renderActiveLeadList();
         return;
       }
       glideState.allRows = rows;
       document.getElementById("glideAllCount").textContent = `${payload.row_count || 0} leads`;
-      renderGlideList("glideAllList", rows);
+      document.getElementById("glideLeadCount").dataset.allCount = String(payload.row_count || 0);
+      renderActiveLeadList();
     }
 
-    function scheduleGlideSearch(mode) {
-      const handleKey = mode === "today" ? "todaySearchHandle" : "allSearchHandle";
-      if (glideState[handleKey]) {
-        window.clearTimeout(glideState[handleKey]);
+    function setLeadsTab(tab) {
+      glideState.activeTab = tab === "search" ? "search" : "queue";
+      const queueActive = glideState.activeTab === "queue";
+      document.getElementById("queueTabPanel").classList.toggle("hidden", !queueActive);
+      document.getElementById("searchTabPanel").classList.toggle("hidden", queueActive);
+      document.getElementById("leadsTabQueueBtn").classList.toggle("bg-[#CC703B]", queueActive);
+      document.getElementById("leadsTabQueueBtn").classList.toggle("text-white", queueActive);
+      document.getElementById("leadsTabQueueBtn").classList.toggle("border", !queueActive);
+      document.getElementById("leadsTabQueueBtn").classList.toggle("border-[#E3DCD5]", !queueActive);
+      document.getElementById("leadsTabQueueBtn").classList.toggle("bg-white", !queueActive);
+      document.getElementById("leadsTabQueueBtn").classList.toggle("text-on-surface", !queueActive);
+      document.getElementById("leadsTabSearchBtn").classList.toggle("bg-[#CC703B]", !queueActive);
+      document.getElementById("leadsTabSearchBtn").classList.toggle("text-white", !queueActive);
+      document.getElementById("leadsTabSearchBtn").classList.toggle("border", queueActive);
+      document.getElementById("leadsTabSearchBtn").classList.toggle("border-[#E3DCD5]", queueActive);
+      document.getElementById("leadsTabSearchBtn").classList.toggle("bg-white", queueActive);
+      document.getElementById("leadsTabSearchBtn").classList.toggle("text-on-surface", queueActive);
+    }
+
+    function scheduleUnifiedLeadSearch() {
+      if (glideState.queueSearchHandle) {
+        window.clearTimeout(glideState.queueSearchHandle);
       }
-      glideState[handleKey] = window.setTimeout(async () => {
-        try {
-          const payload = await loadGlideList(mode, mode === "today" ? glideState.todaySearch : glideState.allSearch);
-          applyGlideListPayload(mode, payload);
-          setGlideStatus("Glide list updated.", "success");
-        } catch (error) {
-          setGlideStatus(error instanceof Error ? error.message : "Failed to refresh Glide list.", "error");
-        }
+      glideState.queueSearchHandle = window.setTimeout(() => {
+        loadGlideView(true);
       }, 250);
+    }
+
+    function renderReferenceResults(rows) {
+      const container = document.getElementById("searchResults");
+      if (!rows.length) {
+        container.innerHTML = `<div class="rounded-2xl border border-dashed border-[#E3DCD5] bg-[#FFFCFA] px-4 py-8 text-center text-sm text-on-surface-variant">No reference results found for the current search.</div>`;
+        return;
+      }
+      container.innerHTML = rows.map((row) => {
+        const primaryContext = [row.Location, row.BHK ? `${row.BHK} BHK` : "", row.Property_Type].filter(Boolean);
+        const valueContext = [];
+        if (row.Budget) {
+          valueContext.push(row.Budget);
+        }
+        if (row.Broker) {
+          valueContext.push(`Broker: ${row.Broker}`);
+        }
+        const lastSeen = row.Last_Seen || row.Created_Date || "";
+        return `
+          <article class="rounded-2xl border border-[#E3DCD5] bg-[#FFFCFA] p-4">
+            <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row.Entry_Type || "-")}</span>
+                </div>
+                <h3 class="mt-2 text-base font-semibold text-on-surface">${escapeHtml(row.Name || "Unnamed Lead")}</h3>
+                ${primaryContext.length ? `<p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(primaryContext.join(" | "))}</p>` : ""}
+                ${valueContext.length ? `<p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(valueContext.join(" | "))}</p>` : ""}
+                ${row.Society ? `<p class="mt-2 text-sm text-on-surface-variant">Society: ${escapeHtml(row.Society)}</p>` : ""}
+                ${row.Landmark ? `<p class="mt-1 text-sm text-on-surface-variant">Near: ${escapeHtml(row.Landmark)}</p>` : ""}
+              </div>
+              <div class="flex flex-col items-start gap-2 md:items-end">
+                <a class="inline-flex rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#B35D29]" href="tel:${escapeAttribute(normalizePhone(row.Phone || "", true)) || "#"}">${escapeHtml(row.Phone || "No phone")}</a>
+                ${lastSeen ? `<span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">Last seen ${escapeHtml(lastSeen)}</span>` : ""}
+              </div>
+            </div>
+          </article>
+        `;
+      }).join("");
+    }
+
+    async function loadReferenceFilterOptions() {
+      glideState.referenceFiltersLoaded = true;
+    }
+
+    async function runReferenceSearch(resetOffset = true) {
+      if (resetOffset) {
+        glideState.referenceOffset = 0;
+      }
+      const query = new URLSearchParams();
+      query.set("limit", "50");
+      query.set("offset", String(glideState.referenceOffset));
+      const searchQuery = document.getElementById("searchQuery").value.trim();
+      const entryType = document.getElementById("searchEntryType").value;
+      const broker = document.getElementById("searchBroker").value.trim();
+      const location = document.getElementById("searchLocation").value.trim();
+      const propertyType = document.getElementById("searchPropertyType").value.trim();
+      if (searchQuery) {
+        query.set("query", searchQuery);
+      }
+      if (entryType) {
+        query.set("entry_type", entryType);
+      }
+      if (broker) {
+        query.set("broker", broker);
+      }
+      if (location) {
+        query.set("location", location);
+      }
+      if (propertyType) {
+        query.set("property_type", propertyType);
+      }
+
+      const res = await fetch(`/search?${query.toString()}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.detail || "Failed to search reference data.");
+      }
+      glideState.referenceRows = body.rows || [];
+      renderReferenceResults(glideState.referenceRows);
+      document.getElementById("referenceSearchMeta").textContent = `${body.row_count || 0} reference rows found. Search is reference-only and does not affect Today or All Leads.`;
     }
 
     async function loadGlideLeadDetail(leadId) {
       const res = await fetch(`/glide/view/${encodeURIComponent(leadId)}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setGlideStatus(body.detail || "Failed to load Glide lead detail.", "error");
+        setGlideStatus(body.detail || "Failed to load lead detail.", "error");
         return;
       }
       glideState.selectedLeadId = leadId;
       renderGlideDetail(body);
-      setGlideStatus(`Loaded Glide detail for ${body.name || leadId}.`, "success");
+      setGlideStatus(`Loaded lead detail for ${body.name || leadId}.`, "success");
     }
 
     async function loadGlideReadiness() {
@@ -1752,13 +2135,25 @@
     }
 
     async function loadAlertsLeads() {
-      const res = await fetch("/glide/alerts-leads?limit=10");
+      const query = new URLSearchParams();
+      query.set("limit", "50");
+      if (glideState.alertsFromDate) {
+        query.set("from_date", glideState.alertsFromDate);
+      }
+      if (glideState.alertsToDate) {
+        query.set("to_date", glideState.alertsToDate);
+      }
+      const res = await fetch(`/glide/alerts-leads?${query.toString()}`);
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body.detail || "Failed to load alerts leads.");
       }
       glideState.alertsLeadRows = body.rows || [];
       renderAlertsLeads(glideState.alertsLeadRows);
+      const filterLabel = glideState.alertsFromDate || glideState.alertsToDate
+        ? `Filtered ${glideState.alertsFromDate || "Start"} to ${glideState.alertsToDate || "End"}`
+        : "Showing all alerts leads.";
+      document.getElementById("alertsLeadsMeta").textContent = `${filterLabel} ${glideState.alertsLeadRows.length} row(s).`;
     }
 
     async function saveDealsLog() {
@@ -1790,6 +2185,8 @@
     async function saveAlertsLead() {
       const payload = {
         contact: document.getElementById("alertsContactInput").value || "",
+        timestamp: document.getElementById("alertsTimestampInput").value || null,
+        follow_up_message: document.getElementById("alertsFollowUpMessageInput").value || "",
       };
       const res = await fetch("/glide/alerts-leads", {
         method: "POST",
@@ -1802,9 +2199,59 @@
         return;
       }
       document.getElementById("alertsContactInput").value = "";
-      document.getElementById("alertsLeadsMeta").textContent = "Alerts leads updated.";
+      document.getElementById("alertsTimestampInput").value = "";
+      document.getElementById("alertsFollowUpMessageInput").value = "";
       await loadAlertsLeads();
       setGlideStatus(body.message || "Alerts lead captured successfully.", "success");
+    }
+
+    async function applyAlertsDateFilter() {
+      glideState.alertsFromDate = document.getElementById("alertsFilterFromDate").value || "";
+      glideState.alertsToDate = document.getElementById("alertsFilterToDate").value || "";
+      await loadAlertsLeads();
+    }
+
+    async function showTodayAlertsLeads() {
+      const today = getAppTodayIsoDate();
+      glideState.alertsFromDate = today;
+      glideState.alertsToDate = today;
+      document.getElementById("alertsFilterFromDate").value = today;
+      document.getElementById("alertsFilterToDate").value = today;
+      await loadAlertsLeads();
+    }
+
+    async function clearAlertsDateFilter() {
+      glideState.alertsFromDate = "";
+      glideState.alertsToDate = "";
+      document.getElementById("alertsFilterFromDate").value = "";
+      document.getElementById("alertsFilterToDate").value = "";
+      await loadAlertsLeads();
+    }
+
+    async function applyLeadDateFilter() {
+      glideState.leadFromDate = document.getElementById("leadFromDate").value || "";
+      glideState.leadToDate = document.getElementById("leadToDate").value || "";
+      glideState.queuePage = 1;
+      await loadGlideView(true);
+    }
+
+    async function showTodayLeadDateFilter() {
+      const today = getAppTodayIsoDate();
+      glideState.leadFromDate = today;
+      glideState.leadToDate = today;
+      glideState.queuePage = 1;
+      document.getElementById("leadFromDate").value = today;
+      document.getElementById("leadToDate").value = today;
+      await loadGlideView(true);
+    }
+
+    async function clearLeadDateFilter() {
+      glideState.leadFromDate = "";
+      glideState.leadToDate = "";
+      glideState.queuePage = 1;
+      document.getElementById("leadFromDate").value = "";
+      document.getElementById("leadToDate").value = "";
+      await loadGlideView(true);
     }
 
     async function loadGlideView(forceRefresh = false) {
@@ -1812,14 +2259,13 @@
         return;
       }
       glideState.loading = true;
-      setGlideStatus("Loading Glide leads...");
+      setGlideStatus("Loading leads...");
       try {
-        const [todayPayload, allPayload] = await Promise.all([
-          loadGlideList("today", glideState.todaySearch),
-          loadGlideList("all", glideState.allSearch),
-        ]);
-        applyGlideListPayload("today", todayPayload);
-        applyGlideListPayload("all", allPayload);
+        if (forceRefresh) {
+          glideState.loadedModes.clear();
+        }
+        await ensureGlideModeLoaded(glideState.queueMode, glideState.leadSearch);
+        renderActiveLeadList();
 
         const defaultLeadId =
           (glideState.selectedLeadId
@@ -1834,14 +2280,20 @@
         } else {
           renderGlideDetail(null);
         }
+        if (!glideState.referenceFiltersLoaded) {
+          await loadReferenceFilterOptions();
+        }
+        const backgroundMode = glideState.queueMode === "today" ? "all" : "today";
+        queueMicrotask(() => {
+          ensureGlideModeLoaded(backgroundMode, glideState.leadSearch).catch(() => {});
+        });
         glideState.loaded = true;
         glideState.needsRefresh = false;
-        setGlideStatus(forceRefresh ? "Glide leads refreshed." : "Glide leads loaded.", "success");
+        setGlideStatus(forceRefresh ? "Leads refreshed." : "Leads loaded.", "success");
       } catch (error) {
-        renderGlideList("glideTodayList", []);
-        renderGlideList("glideAllList", []);
+        renderGlideList("glideLeadList", []);
         renderGlideDetail(null);
-        setGlideStatus(error instanceof Error ? error.message : "Failed to load Glide leads.", "error");
+        setGlideStatus(error instanceof Error ? error.message : "Failed to load leads.", "error");
       } finally {
         glideState.loading = false;
       }
@@ -1941,9 +2393,30 @@
       table.querySelectorAll(".data-column-filter").forEach((input) => {
         input.addEventListener("input", (event) => {
           dataState.columnFilters[event.target.dataset.column] = event.target.value;
+          dataState.activeFilterColumn = event.target.dataset.column || "";
+          dataState.activeFilterSelectionStart = event.target.selectionStart;
+          dataState.activeFilterSelectionEnd = event.target.selectionEnd;
           renderDataTable(dataState.lastPayload || payload);
         });
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            event.stopPropagation();
+            dataState.activeFilterColumn = event.target.dataset.column || "";
+            dataState.activeFilterSelectionStart = event.target.selectionStart;
+            dataState.activeFilterSelectionEnd = event.target.selectionEnd;
+          }
+        });
       });
+      if (dataState.activeFilterColumn) {
+        const activeFilterInput = table.querySelector(`.data-column-filter[data-column="${CSS.escape(dataState.activeFilterColumn)}"]`);
+        if (activeFilterInput) {
+          activeFilterInput.focus({ preventScroll: true });
+          if (typeof dataState.activeFilterSelectionStart === "number" && typeof dataState.activeFilterSelectionEnd === "number") {
+            activeFilterInput.setSelectionRange(dataState.activeFilterSelectionStart, dataState.activeFilterSelectionEnd);
+          }
+        }
+      }
       initializeCellNavigation();
     }
 
@@ -2076,6 +2549,14 @@
       document.getElementById("clearDataModal").hidden = true;
     }
 
+    function openSettingsModal() {
+      document.getElementById("settingsModal").hidden = false;
+    }
+
+    function closeSettingsModal() {
+      document.getElementById("settingsModal").hidden = true;
+    }
+
     async function clearData() {
       const selectedMode = document.querySelector('input[name="clear-mode"]:checked').value;
       const fromDate = document.getElementById("modal-from-date").value || null;
@@ -2127,7 +2608,7 @@
     document.getElementById("processAllBtn").addEventListener("click", () => {
       const out = document.getElementById("out");
 
-      if (hasSelectedFiles("file-upload") || hasSelectedFiles("folder-upload")) {
+      if (hasSelectedFiles("file-upload")) {
         document.getElementById("fileForm").requestSubmit();
         return;
       }
@@ -2146,13 +2627,13 @@
         {
           status: 400,
           body: {
-            detail: "Nothing to process yet. Upload files, choose a folder, paste chat text, or fill name and requirement in manual entry."
+            detail: "Nothing to process yet. Upload files or a folder, paste chat text, or fill name and requirement in manual entry."
           }
         },
         null,
         2
       );
-      document.getElementById("dashboard").scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById("response").scrollIntoView({ behavior: "smooth", block: "start" });
     });
 
     document.getElementById("brandLink").addEventListener("click", (event) => {
@@ -2163,15 +2644,6 @@
     document.querySelectorAll(".view-link").forEach((link) => {
       link.addEventListener("click", () => {
         setView(link.dataset.viewTarget);
-      });
-    });
-
-    document.querySelectorAll(".tab-link").forEach((link) => {
-      if (!link.dataset.tabTarget) {
-        return;
-      }
-      link.addEventListener("click", () => {
-        activateTab(link.dataset.tabTarget);
       });
     });
 
@@ -2230,22 +2702,85 @@
     document.getElementById("refreshGlideFilterConfigBtn").addEventListener("click", loadGlideFilterConfig);
     document.getElementById("refreshDealsLogBtn").addEventListener("click", loadDealsLog);
     document.getElementById("refreshAlertsLeadsBtn").addEventListener("click", loadAlertsLeads);
+    document.getElementById("applyLeadDateFilterBtn").addEventListener("click", applyLeadDateFilter);
+    document.getElementById("todayLeadDateFilterBtn").addEventListener("click", showTodayLeadDateFilter);
+    document.getElementById("clearLeadDateFilterBtn").addEventListener("click", clearLeadDateFilter);
+    document.getElementById("applyAlertsFilterBtn").addEventListener("click", applyAlertsDateFilter);
+    document.getElementById("todayAlertsFilterBtn").addEventListener("click", showTodayAlertsLeads);
+    document.getElementById("clearAlertsFilterBtn").addEventListener("click", clearAlertsDateFilter);
+    document.getElementById("closeLeadMessageModalBtn").addEventListener("click", closeLeadMessageModal);
     document.getElementById("saveDealsLogBtn").addEventListener("click", saveDealsLog);
     document.getElementById("saveAlertsLeadBtn").addEventListener("click", saveAlertsLead);
     document.getElementById("saveGlideExecutionBtn").addEventListener("click", saveGlideExecution);
-    document.getElementById("glideTodaySearch").addEventListener("input", (event) => {
-      glideState.todaySearch = event.target.value;
-      scheduleGlideSearch("today");
+    document.getElementById("leadViewFilter").addEventListener("change", async (event) => {
+      glideState.queueMode = event.target.value || "today";
+      glideState.queuePage = 1;
+      renderActiveLeadList();
+      await loadGlideView(true);
     });
-    document.getElementById("glideAllSearch").addEventListener("input", (event) => {
-      glideState.allSearch = event.target.value;
-      scheduleGlideSearch("all");
+    document.getElementById("leadTypeFilter").addEventListener("change", (event) => {
+      glideState.leadTypeFilter = event.target.value || "";
+      glideState.queuePage = 1;
+      scheduleUnifiedLeadSearch();
+    });
+    document.getElementById("leadPropertyFilter").addEventListener("input", (event) => {
+      glideState.leadPropertyFilter = event.target.value || "";
+      glideState.queuePage = 1;
+      scheduleUnifiedLeadSearch();
+    });
+    document.getElementById("leadSearch").addEventListener("input", (event) => {
+      glideState.leadSearch = event.target.value || "";
+      glideState.queuePage = 1;
+      scheduleUnifiedLeadSearch();
+    });
+    document.getElementById("prevLeadPageBtn").addEventListener("click", () => {
+      glideState.queuePage = Math.max(1, glideState.queuePage - 1);
+      renderActiveLeadList();
+    });
+    document.getElementById("nextLeadPageBtn").addEventListener("click", () => {
+      glideState.queuePage += 1;
+      renderActiveLeadList();
+    });
+    document.getElementById("leadsTabQueueBtn").addEventListener("click", () => setLeadsTab("queue"));
+    document.getElementById("leadsTabSearchBtn").addEventListener("click", async () => {
+      setLeadsTab("search");
+      if (!glideState.referenceFiltersLoaded) {
+        try {
+          await loadReferenceFilterOptions();
+        } catch (error) {
+          setGlideStatus(error instanceof Error ? error.message : "Failed to load search filters.", "error");
+        }
+      }
+    });
+    document.getElementById("runReferenceSearchBtn").addEventListener("click", async () => {
+      try {
+        await runReferenceSearch(true);
+      } catch (error) {
+        setGlideStatus(error instanceof Error ? error.message : "Failed to search reference data.", "error");
+      }
+    });
+    document.getElementById("resetReferenceSearchBtn").addEventListener("click", async () => {
+      document.getElementById("searchQuery").value = "";
+      document.getElementById("searchEntryType").value = "";
+      document.getElementById("searchBroker").value = "";
+      document.getElementById("searchLocation").value = "";
+      document.getElementById("searchPropertyType").value = "";
+      try {
+        await runReferenceSearch(true);
+      } catch (error) {
+        setGlideStatus(error instanceof Error ? error.message : "Failed to reset reference search.", "error");
+      }
     });
     document.getElementById("detailCallLead").addEventListener("click", () => {
       logGlideAction("call");
     });
     document.getElementById("detailWhatsappLead").addEventListener("click", () => {
       logGlideAction("whatsapp");
+    });
+    document.getElementById("detailDeleteLeadBtn").addEventListener("click", () => {
+      deleteSelectedLead().catch((error) => {
+        setGlideStatus(error instanceof Error ? error.message : "Failed to delete lead.", "error");
+      });
     });
     
     document.getElementById("generateMessageBtn").addEventListener("click", async () => {
@@ -2293,67 +2828,8 @@
     document.getElementById("cancelClearDataBtn").addEventListener("click", closeClearModal);
     document.getElementById("confirmClearDataBtn").addEventListener("click", clearData);
     document.getElementById("confirmClearText").addEventListener("input", toggleClearButtonState);
-
-    async function loadRunLog() {
-      const tbody = document.getElementById("runLogTableBody");
-      tbody.innerHTML = '<tr><td class="px-4 py-10 text-center text-sm text-on-surface-variant" colspan="11">Loading...</td></tr>';
-      
-      const res = await fetch(`/data/run-log?limit=${runLogState.pageSize}&offset=${runLogState.offset}`);
-      const data = await res.json().catch(() => ({}));
-      
-      if (!res.ok) {
-        tbody.innerHTML = '<tr><td class="px-4 py-10 text-center text-sm text-danger" colspan="11">Failed to load run log</td></tr>';
-        return;
-      }
-      
-      const rows = data.rows || [];
-      runLogState.totalRows = data.row_count || 0;
-      
-      if (!rows.length) {
-        tbody.innerHTML = '<tr><td class="px-4 py-10 text-center text-sm text-on-surface-variant" colspan="11">No runs logged yet</td></tr>';
-        return;
-      }
-      
-      tbody.innerHTML = rows.map((row, idx) => {
-        const startTime = new Date(row.start_time || '');
-        const endTime = new Date(row.end_time || '');
-        const duration = endTime && startTime ? ((endTime - startTime) / 1000).toFixed(2) + 's' : '-';
-        const statusClass = row.status === 'SUCCESS' ? 'text-[#265C2E]' : 'text-danger';
-        const statusBg = row.status === 'SUCCESS' ? 'bg-[#EAF6E7]' : 'bg-[#FFF3F1]';
-        
-        return `
-          <tr class="${idx % 2 === 0 ? 'bg-white' : 'bg-[#FFFCFA]'}">
-            <td class="border-b border-r border-grid px-4 py-3 font-mono text-xs">${escapeHtml(row.run_id || '').substring(0, 8)}...</td>
-            <td class="border-b border-r border-grid px-4 py-3 text-xs">${escapeHtml(row.start_time || '-')}</td>
-            <td class="border-b border-r border-grid px-4 py-3 text-xs">${escapeHtml(row.end_time || '-')}</td>
-            <td class="border-b border-r border-grid px-4 py-3 text-xs">${duration}</td>
-            <td class="border-b border-r border-grid px-4 py-3 text-center">${escapeHtml(row.rows_processed || '0')}</td>
-            <td class="border-b border-r border-grid px-4 py-3 text-center">${escapeHtml(row.new_rows || '0')}</td>
-            <td class="border-b border-r border-grid px-4 py-3 text-center">${escapeHtml(row.duplicates || '0')}</td>
-            <td class="border-b border-r border-grid px-4 py-3 text-center">${escapeHtml(row.ignored || '0')}</td>
-            <td class="border-b border-r border-grid px-4 py-3 text-center">${escapeHtml(row.matches || '0')}</td>
-            <td class="border-b border-r border-grid px-4 py-3"><span class="rounded-full px-2 py-1 text-xs font-semibold ${statusBg} ${statusClass}">${escapeHtml(row.status || '-')}</span></td>
-            <td class="border-b border-grid px-4 py-3 text-xs text-danger">${escapeHtml(row.error_message || '-')}</td>
-          </tr>
-        `;
-      }).join('');
-      
-      const startRow = runLogState.offset + 1;
-      const endRow = runLogState.offset + rows.length;
-      document.getElementById('runLogPageMeta').textContent = `Showing ${startRow} to ${endRow} of ${runLogState.totalRows}`;
-      document.getElementById('prevRunLogPageBtn').disabled = runLogState.offset === 0;
-      document.getElementById('nextRunLogPageBtn').disabled = runLogState.offset + rows.length >= runLogState.totalRows;
-    }
-
-    document.getElementById('refreshRunLogBtn').addEventListener('click', loadRunLog);
-    document.getElementById('prevRunLogPageBtn').addEventListener('click', async () => {
-      runLogState.offset = Math.max(0, runLogState.offset - runLogState.pageSize);
-      await loadRunLog();
-    });
-    document.getElementById('nextRunLogPageBtn').addEventListener('click', async () => {
-      runLogState.offset += runLogState.pageSize;
-      await loadRunLog();
-    });
+    document.getElementById("openSettingsModalBtn").addEventListener("click", openSettingsModal);
+    document.getElementById("closeSettingsModalBtn").addEventListener("click", closeSettingsModal);
 
     document.getElementById("settingsForm").addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -2385,7 +2861,7 @@
 
       document.getElementById("match_threshold").value = settings.match_threshold || 40;
       document.getElementById("dedup_window_days").value = settings.dedup_window_days || 1;
-      document.getElementById("lookback_days").value = settings.lookback_days || 0;
+      document.getElementById("lookback_days").value = settings.lookback_days || 365;
       document.getElementById("top_leads_count").value = settings.top_leads_count || 10;
       document.getElementById("top_leads_validation_size").value = settings.top_leads_validation_size || 10;
       document.getElementById("glide_activity_window_days").value = settings.glide_activity_window_days || 120;
@@ -2398,7 +2874,7 @@
     document.getElementById("resetSettingsBtn").addEventListener("click", () => {
       document.getElementById("match_threshold").value = 40;
       document.getElementById("dedup_window_days").value = 1;
-      document.getElementById("lookback_days").value = 0;
+      document.getElementById("lookback_days").value = 365;
       document.getElementById("top_leads_count").value = 10;
       document.getElementById("top_leads_validation_size").value = 10;
       document.getElementById("glide_activity_window_days").value = 120;
@@ -2406,11 +2882,20 @@
       document.getElementById("glide_priority_qualified_score").value = 60;
     });
 
+    document.querySelectorAll(".upload-mode-pill").forEach((button) => {
+      button.addEventListener("click", () => {
+        setUploadMode(button.dataset.uploadMode || "files");
+      });
+    });
+    document.getElementById("file-upload").addEventListener("change", updateFileSelectionMeta);
+
     submitForm("fileForm", "/ingest/whatsapp-file");
     submitForm("pasteForm", "/ingest/whatsapp-paste");
     submitForm("manualForm", "/ingest/manual");
+    setUploadMode("files");
+    resetIngestProgress();
+    setLeadsTab("queue");
     updateGridMaximizeButton();
-    activateTab("dashboard-tab");
     setView("ingestion-view");
   </script>
 </body>

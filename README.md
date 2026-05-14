@@ -7,6 +7,8 @@ Rule-based lead ingestion and matching pipeline for WhatsApp exports and manual 
   - WhatsApp `.txt` upload
   - pasted chat text
   - manual form
+- Live background job progress with stage tracking:
+  - upload -> parse -> extract -> match -> complete
 - Automatic processing on submit:
   - parse -> classify -> extract -> normalize -> dedup -> score -> match -> summarize
 - Google Sheets as only runtime control layer for:
@@ -14,6 +16,10 @@ Rule-based lead ingestion and matching pipeline for WhatsApp exports and manual 
   - thresholds
   - weights
   - lookback / dedup windows
+- Leads workspace:
+  - unified `Today` / `All Leads` queue filter
+  - buyer/seller badges and queue filter
+  - reference-only historical search layer
 - No LLM usage. Deterministic rule-based outputs.
 - **Actionable outputs**: All matches and top leads have phone numbers and are ready to call
 - **Quality over quantity**: Strict eligibility filters ensure only high-quality matches appear
@@ -70,10 +76,32 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Open `http://localhost:8000`.
 
+## Login
+
+The web app is protected by a login screen.
+
+Default credentials:
+- Username: `https://www.sheltersrealty.co.in/`
+- Password: `home@A1`
+
+Override them with:
+- `MATCHER_AUTH_USERNAME`
+- `MATCHER_AUTH_PASSWORD`
+
+Set secure values for:
+- `MATCHER_SESSION_SECRET`
+- `MATCHER_INTERNAL_PROXY_TOKEN`
+
+The separate mobile app uses the same username and password.
+
 ## Endpoints
 - `POST /ingest/whatsapp-file` (`file`, `source`)
 - `POST /ingest/whatsapp-paste` (`chat_text`, `source`)
 - `POST /ingest/manual` (`name`, `phone`, `requirement`, `location`, `budget`, `notes`, `source`)
+- `GET /jobs/{job_id}` - background job status
+- `GET /jobs/{job_id}/events` - SSE stream for live job progress
+- `GET /search` - reference search over retained historical leads
+- `GET /search/options` - distinct search filter values
 - `POST /system/refresh` - Scheduled refresh endpoint for cron-based execution
 
 Notes:
@@ -81,11 +109,36 @@ Notes:
 - For multi-file upload, each file is stored under its own source using the filename or relative folder path plus filename stem.
 - Folder upload is supported from the web UI in browsers that support directory selection; a folder containing 50-60 exported `.txt` chats can be sent in one request.
 - `POST /ingest/whatsapp-paste` supports multi-group combined text when each block starts with a marker such as `Source: Group Name`.
+- `/search` supports `query`, `entry_type`, `lead_type`, `location`, `property_type`, `broker`, `phone`, `limit`, and `offset`.
+
+## Reference Search Layer
+`Reference Data` is a DB-backed projection built from `Structured Data` during ingestion and refresh.
+
+Included rows:
+- `APPROVED` rows
+- high-confidence rows (score `>= 75`)
+
+Stored fields:
+- `Lead_ID`, `Name`, `Phone`
+- `Entry_Type` (`Property` or `Requirement`)
+- `Lead_Type` (`Buyer` or `Seller`)
+- `Location`, `Property_Type`, `Budget`, `BHK`
+- `Society`, `Landmark`, `Last_Seen`, `Created_Date`
+- `Source`, `Broker`
+
+Retention:
+- default: 180 days
+- special assets (`commercial`, `land`, `luxury`, `villa`, `penthouse`): 365 days
+
+Search is reference-only. It does not create matches or write back to the main queue.
 
 ## Google Sheets Contract
 The app auto-creates and seeds these tabs:
 - `Raw Data`
+- `Processed Messages`
+- `Run Log`
 - `Structured Data`
+- `Reference Data`
 - `Rejected / Ignored Data`
 - `Matches`
 - `Match Validation Checkpoint`
@@ -97,6 +150,11 @@ The app auto-creates and seeds these tabs:
 - `Validation Checkpoint`
 - `Manual Entries`
 - `Clean Data`
+- `Glide Execution`
+- `Glide Write Log`
+- `System Errors`
+- `Deals Log`
+- `Alerts Leads`
 - `Config`
 - `Location Mapping`
 - `Property Type Mapping`

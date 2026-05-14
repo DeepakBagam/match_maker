@@ -4,6 +4,21 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+RETENTION_RULES = {
+    "default": 180,
+    "special": 365,
+}
+
+SPECIAL_ASSET_TYPES = [
+    "commercial",
+    "land",
+    "luxury",
+    "villa",
+    "penthouse",
+]
+
+REFERENCE_HIGH_CONFIDENCE_SCORE = 75.0
+
 
 @dataclass(frozen=True)
 class Settings:

@@ -39,7 +39,34 @@ def _match_message_start(line: str):
 
 
 def _parse_timestamp(date_text: str, time_text: str) -> datetime:
-    return dt_parser.parse(f"{date_text} {time_text}", dayfirst=True)
+    try:
+        day_text, month_text, year_text = re.split(r"[/-]", date_text.strip())
+        day = int(day_text)
+        month = int(month_text)
+        year = int(year_text)
+        if year < 100:
+            year += 2000
+
+        normalized_time = time_text.strip().lower().replace(" ", "")
+        meridiem = ""
+        if normalized_time.endswith(("am", "pm")):
+            meridiem = normalized_time[-2:]
+            normalized_time = normalized_time[:-2]
+
+        time_parts = [int(part) for part in normalized_time.split(":")]
+        hour = time_parts[0]
+        minute = time_parts[1]
+        second = time_parts[2] if len(time_parts) > 2 else 0
+
+        if meridiem:
+            if hour == 12:
+                hour = 0
+            if meridiem == "pm":
+                hour += 12
+
+        return datetime(year, month, day, hour, minute, second)
+    except Exception:
+        return dt_parser.parse(f"{date_text} {time_text}", dayfirst=True)
 
 
 def _source_marker(line: str) -> str:
@@ -48,13 +75,21 @@ def _source_marker(line: str) -> str:
         return ""
     return match.group("source").strip()
 
-
-def parse_whatsapp_export(text: str, source: str) -> list[ParsedMessage]:
-    lines = text.splitlines()
+def _parse_whatsapp_lines(lines: Iterable[str], default_source: str, *, allow_source_markers: bool) -> list[ParsedMessage]:
+    active_source = default_source
     entries: list[ParsedMessage] = []
     current: ParsedMessage | None = None
 
     for line in lines:
+        if allow_source_markers:
+            source = _source_marker(line)
+            if source:
+                if current is not None:
+                    entries.append(current)
+                    current = None
+                active_source = source
+                continue
+
         match = _match_message_start(line)
         if match:
             if current is not None:
@@ -64,7 +99,7 @@ def parse_whatsapp_export(text: str, source: str) -> list[ParsedMessage]:
                 timestamp=timestamp,
                 sender=match.group("sender").strip(),
                 message=match.group("body").strip(),
-                source=source,
+                source=active_source,
                 raw_message=match.group("body").strip(),
             )
             continue
@@ -79,33 +114,12 @@ def parse_whatsapp_export(text: str, source: str) -> list[ParsedMessage]:
     return entries
 
 
+def parse_whatsapp_export(text: str, source: str) -> list[ParsedMessage]:
+    return _parse_whatsapp_lines(text.splitlines(), source, allow_source_markers=False)
+
+
 def parse_combined_whatsapp_export(text: str, default_source: str) -> list[ParsedMessage]:
-    active_source = default_source
-    batch_lines: list[str] = []
-    entries: list[ParsedMessage] = []
-    saw_marker = False
-
-    def flush() -> None:
-        nonlocal batch_lines, entries
-        if not any(line.strip() for line in batch_lines):
-            batch_lines = []
-            return
-        entries.extend(parse_whatsapp_export("\n".join(batch_lines), active_source))
-        batch_lines = []
-
-    for line in text.splitlines():
-        source = _source_marker(line)
-        if source:
-            saw_marker = True
-            flush()
-            active_source = source
-            continue
-        batch_lines.append(line)
-
-    flush()
-    if entries or saw_marker:
-        return entries
-    return parse_whatsapp_export(text, default_source)
+    return _parse_whatsapp_lines(text.splitlines(), default_source, allow_source_markers=True)
 
 
 def filter_recent(messages: Iterable[ParsedMessage], lookback_days: int, now: datetime) -> list[ParsedMessage]:

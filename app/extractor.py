@@ -5,6 +5,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from functools import lru_cache
 from typing import Iterable
 
 from .analytics import budget_bucket, month_bucket, week_bucket
@@ -212,6 +213,7 @@ EMOJI_RE = re.compile(
 class MappingEntry:
     canonical: str
     aliases: list[str]
+    normalized_aliases: tuple[str, ...]
 
 
 @dataclass
@@ -243,21 +245,41 @@ class MappingResolver:
             if raw:
                 aliases.append(raw)
             if canonical:
-                self.entries.append(MappingEntry(canonical=canonical, aliases=list(dict.fromkeys(aliases))))
+                unique_aliases = list(dict.fromkeys(aliases))
+                normalized_aliases = tuple(
+                    alias
+                    for alias in sorted(
+                        {_mapping_normalize(alias) for alias in unique_aliases if alias.strip()},
+                        key=len,
+                        reverse=True,
+                    )
+                    if alias
+                )
+                self.entries.append(
+                    MappingEntry(
+                        canonical=canonical,
+                        aliases=unique_aliases,
+                        normalized_aliases=normalized_aliases,
+                    )
+                )
 
     def resolve(self, text: str) -> tuple[str, bool]:
         candidate = _mapping_normalize(text)
+        if not candidate:
+            return "", False
+        padded_candidate = f" {candidate} "
         matches: list[tuple[str, int]] = []
         for entry in self.entries:
-            best_for_entry = 0
-            for alias in entry.aliases:
-                normalized_alias = _mapping_normalize(alias)
-                if not normalized_alias:
-                    continue
-                if re.search(rf"(?<!\w){re.escape(normalized_alias)}(?!\w)", candidate):
-                    best_for_entry = max(best_for_entry, len(normalized_alias))
-            if best_for_entry:
-                matches.append((entry.canonical, best_for_entry))
+            matched_alias = next(
+                (
+                    alias
+                    for alias in entry.normalized_aliases
+                    if f" {alias} " in padded_candidate
+                ),
+                "",
+            )
+            if matched_alias:
+                matches.append((entry.canonical, len(matched_alias)))
         if not matches:
             return "", False
         best_len = max(length for _, length in matches)
@@ -289,10 +311,12 @@ def normalize_text(raw: str) -> str:
     return text
 
 
+@lru_cache(maxsize=16384)
 def _mapping_normalize(raw: str) -> str:
     cleaned = normalize_text(raw)
     cleaned = cleaned.replace("society", "soc")
     cleaned = re.sub(r"\bco[\s-]?op\b", "coop", cleaned)
+    cleaned = re.sub(r"[,./-]+", " ", cleaned)
     return re.sub(r"\s+", " ", cleaned).strip()
 
 
@@ -601,6 +625,27 @@ def extract_furnishing(cleaned: str) -> str:
 
 def extract_project_name(text: str) -> str:
     """Extract property/project name."""
+    generic_leading_words = {"need", "available", "wanted", "requirement", "looking", "urgent", "rent", "sale"}
+    for raw_line in str(text).splitlines():
+        line = raw_line.strip().strip("*")
+        if not line:
+            continue
+        if line.lower().startswith("project "):
+            candidate = line[8:].strip(" -*,.:")
+            if candidate and not LOCATION_STOP_PHRASES_RE.search(candidate):
+                return candidate.title()
+        start_match = re.search(
+            r'^(?:location\s+)?([A-Za-z][A-Za-z0-9\s&.\',/-]{1,50}?)\s+\d+(?:\.\d+)?\s*[- ]?bhk\b',
+            line,
+            re.IGNORECASE,
+        )
+        if start_match:
+            candidate = start_match.group(1).strip(" -*,.:")
+            if candidate.lower().startswith("project "):
+                candidate = candidate[8:].strip(" -*,.:")
+            if candidate and candidate.lower() not in generic_leading_words and not LOCATION_STOP_PHRASES_RE.search(candidate):
+                return candidate.title()
+
     match = PROJECT_RE.search(text)
     if match:
         name = match.group(1).strip()
@@ -621,28 +666,31 @@ def extract_project_name(text: str) -> str:
 def infer_location_from_keywords(cleaned: str) -> str:
     """Infer location from known Pune area keywords."""
     text_lower = cleaned.lower()
-    
+
+    def has_phrase(phrase: str) -> bool:
+        return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text_lower) is not None
+
     # Check for multi-word locations first (more specific)
     multi_word_locs = sorted([loc for loc in PUNE_LOCATIONS if ' ' in loc], key=len, reverse=True)
     for loc in multi_word_locs:
-        if loc in text_lower:
+        if has_phrase(loc):
             return loc.title()
-    
+
     # Check for single-word locations
     words = text_lower.split()
     for word in words:
         if word in PUNE_LOCATIONS:
             return word.title()
-    
+
     # Fallback to city keywords
     for city in CITY_KEYWORDS:
-        if ' ' in city and city in text_lower:
+        if ' ' in city and has_phrase(city):
             return city.title()
-    
+
     for word in words:
         if word in CITY_KEYWORDS:
             return word.title()
-    
+
     return ""
 
 
@@ -1064,17 +1112,17 @@ def extract_location(cleaned: str, location_mapper: MappingResolver) -> tuple[st
     location, ambiguous = location_mapper.resolve(cleaned)
     if location or ambiguous:
         return location, ambiguous
-    
-    # 2. Try keyword inference (fast, local)
-    inferred = infer_location_from_keywords(cleaned)
-    if inferred:
-        return inferred, False
-    
-    # 3. Try anchored context extraction instead of guessing arbitrary phrases.
+
+    # 2. Try anchored context extraction before broad keyword scans.
     contextual, contextual_ambiguous = extract_location_from_context(cleaned, location_mapper)
     if contextual or contextual_ambiguous:
         return contextual, contextual_ambiguous
-    
+
+    # 3. Try keyword inference with exact phrase boundaries.
+    inferred = infer_location_from_keywords(cleaned)
+    if inferred:
+        return inferred, False
+
     # 4. LAST RESORT: Use geocoding only if location is still blank
     if USE_GEOCODING:
         try:
@@ -1186,6 +1234,7 @@ def to_structured(
     score_weights: dict[str, float],
 ) -> list[StructuredLead]:
     leads: list[StructuredLead] = []
+    has_property_mapping_entries = bool(property_mapper.entries)
 
     expanded_messages: list[ParsedMessage] = []
     for msg in messages:
@@ -1321,6 +1370,7 @@ def to_structured(
                 pass  # Gracefully degrade if service not available
             
         property_type, property_ambiguous = extract_property(cleaned, property_mapper)
+        mapped_property = property_type
         if property_ambiguous:
             property_type = ""
         property_hint = extract_property_hint(cleaned)
@@ -1335,9 +1385,7 @@ def to_structured(
         
         # Infer property type if missing AND no mapping was found
         if not property_type and not property_ambiguous:
-            # Check if mapping table has entries (more than just header)
-            has_mapping_entries = len(property_mapper.entries) > 0
-            property_type = infer_property_type(bhk, bmin, transaction, property_hint, has_mapping_entries)
+            property_type = infer_property_type(bhk, bmin, transaction, property_hint, has_property_mapping_entries)
 
         location_conf, budget_conf, bhk_conf, flags = confidence_scores(
             location, location_ambiguous, bmin, bmax, bhk, bhk_ambiguous
@@ -1348,11 +1396,8 @@ def to_structured(
             flags.append("property_ambiguous")
         elif not property_type:
             flags.append("property_missing")
-        else:
-            # Check if property was inferred vs mapped
-            mapped_property, _ = extract_property(cleaned, property_mapper)
-            if not mapped_property and property_type:
-                flags.append("property_inferred")
+        elif not mapped_property:
+            flags.append("property_inferred")
         if not transaction:
             flags.append("transaction_missing")
         else:

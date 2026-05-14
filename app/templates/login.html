@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Match Maker Login</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: "#944512",
+            warm: "#fff4ec",
+            line: "#e7d9cf",
+            ink: "#231a11",
+            soft: "#6b564b",
+          },
+          fontFamily: {
+            sans: ["Inter", "sans-serif"],
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="min-h-screen bg-[radial-gradient(circle_at_top,#fff8f4_0%,#fff3ea_42%,#f8ece4_100%)] font-sans text-ink">
+  <main class="mx-auto flex min-h-screen max-w-md items-center px-6 py-10">
+    <section class="w-full rounded-[32px] border border-line bg-white/95 p-8 shadow-[0_18px_50px_rgba(35,26,17,0.08)] backdrop-blur">
+      <p class="text-xs font-bold uppercase tracking-[0.28em] text-primary">Shelters Realty</p>
+      <h1 class="mt-3 text-3xl font-extrabold tracking-tight">Match Maker Login</h1>
+      <p class="mt-2 text-sm text-soft">Enter the shared username and password to access the leads workspace.</p>
+
+      {% if error %}
+      <div class="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{{ error }}</div>
+      {% endif %}
+
+      <form action="/login" class="mt-6 space-y-4" method="post">
+        <input name="next" type="hidden" value="{{ next or '/' }}" />
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="username">Username</label>
+          <input class="mt-2 w-full rounded-2xl border-line bg-warm text-sm focus:border-primary focus:ring-primary" id="username" name="username" required type="text" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="password">Password</label>
+          <input class="mt-2 w-full rounded-2xl border-line bg-warm text-sm focus:border-primary focus:ring-primary" id="password" name="password" required type="password" />
+        </div>
+        <button class="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white" type="submit">Login</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

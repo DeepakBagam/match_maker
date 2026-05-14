@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>Leads Mobile Login</title>
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: "#8e4a4b",
+            line: "#d7c1c2",
+            ink: "#201a1a",
+            soft: "#524344",
+            wash: "#fbf8f8",
+            blush: "#f8ebeb",
+          },
+          fontFamily: {
+            display: ["Playfair Display", "serif"],
+            body: ["Inter", "sans-serif"],
+          },
+        },
+      },
+    };
+  </script>
+</head>
+<body class="min-h-screen bg-[linear-gradient(180deg,#fff8f7_0%,#fbf8f8_42%,#f3e7e7_100%)] font-body text-ink">
+  <main class="mx-auto flex min-h-screen max-w-md items-center px-6 py-10">
+    <section class="w-full rounded-[32px] border border-line bg-white/95 p-8 shadow-[0_18px_50px_rgba(32,26,26,0.08)]">
+      <p class="text-xs font-semibold uppercase tracking-[0.28em] text-primary">Shelters Realty</p>
+      <h1 class="mt-3 font-display text-4xl text-ink">Mobile Login</h1>
+      <p class="mt-2 text-sm text-soft">Use the shared credentials to access the separate mobile leads app.</p>
+
+      <div class="mt-5 hidden rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700" id="errorBox">
+        Invalid username or password
+      </div>
+
+      <form action="/login" class="mt-6 space-y-4" method="post">
+        <input id="nextInput" name="next" type="hidden" value="/" />
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="username">Username</label>
+          <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="username" name="username" required type="text" />
+        </div>
+        <div>
+          <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="password">Password</label>
+          <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="password" name="password" required type="password" />
+        </div>
+        <button class="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white" type="submit">Login</button>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    document.getElementById("nextInput").value = params.get("next") || "/";
+    if (params.get("error")) {
+      document.getElementById("errorBox").classList.remove("hidden");
+    }
+  </script>
+</body>
+</html>

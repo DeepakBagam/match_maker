@@ -1,17 +1,24 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+import inspect
+import json
 from io import BytesIO
 from functools import lru_cache
 from pathlib import Path
+import time
 from typing import Any
+import os
+from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from openpyxl import Workbook
 from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
 
 from .communication import (
     generate_buyer_match_message,
@@ -27,7 +34,7 @@ from .data_management import clear_structured_data, get_structured_dataset, pars
 from .db_client import DatabaseClient, REQUIRED_TABS
 from .glide_builder import get_glide_filter_config, get_glide_lead_detail, get_glide_readiness, get_glide_view_dataset, invalidate_glide_cache
 from .glide_execution import log_glide_action, save_glide_execution
-from .job_queue import get_job, submit_job
+from .job_queue import get_job, submit_job, update_job_progress
 from .parser import parse_combined_whatsapp_export
 from .pipeline import process_manual_entry, process_parsed_messages, process_whatsapp_text
 from .scheduler import refresh_system
@@ -35,7 +42,46 @@ from .scheduler import refresh_system
 BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+AUTH_USERNAME = os.getenv("MATCHER_AUTH_USERNAME", "https://www.sheltersrealty.co.in/")
+AUTH_PASSWORD = os.getenv("MATCHER_AUTH_PASSWORD", "home@A1")
+SESSION_SECRET = os.getenv("MATCHER_SESSION_SECRET", "change-me-main-session-secret")
+INTERNAL_PROXY_TOKEN = os.getenv("MATCHER_INTERNAL_PROXY_TOKEN", "change-me-internal-proxy-token")
+AUTH_EXEMPT_PATHS = {"/login", "/logout", "/health"}
+
 app = FastAPI(title="Match Maker")
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
+
+_CPU_COUNT = os.cpu_count() or 1
+_MAX_PARSE_WORKERS = max(1, int(os.getenv("MATCHLAYER_PARSE_WORKERS", str(min(8, _CPU_COUNT)))))
+_MAX_MESSAGES_PER_RUN = max(0, int(os.getenv("MATCHLAYER_MAX_MESSAGES_PER_RUN", "0")))
+
+
+def _request_path_with_query(request: Request) -> str:
+    query = str(request.url.query or "").strip()
+    return f"{request.url.path}?{query}" if query else request.url.path
+
+
+def _is_authenticated_request(request: Request) -> bool:
+    if request.headers.get("X-Internal-Auth", "") == INTERNAL_PROXY_TOKEN:
+        return True
+    return bool(request.session.get("authenticated"))
+
+
+def _unauthorized_response(request: Request):
+    accept = request.headers.get("accept", "")
+    if request.method == "GET" and "text/html" in accept:
+        next_target = quote(_request_path_with_query(request), safe="/?=&")
+        return RedirectResponse(url=f"/login?next={next_target}", status_code=303)
+    return JSONResponse(status_code=401, content={"detail": "Authentication required"})
+
+
+@app.middleware("http")
+async def require_authentication(request: Request, call_next):
+    if request.url.path in AUTH_EXEMPT_PATHS:
+        return await call_next(request)
+    if _is_authenticated_request(request):
+        return await call_next(request)
+    return _unauthorized_response(request)
 
 
 class ClearDataRequest(BaseModel):
@@ -73,6 +119,13 @@ class DealsLogCreateRequest(BaseModel):
 
 class AlertsLeadCreateRequest(BaseModel):
     contact: str
+    source: str = "Website"
+    timestamp: str | None = None
+    follow_up_message: str = ""
+
+
+class LeadDeleteRequest(BaseModel):
+    confirm: str = ""
 
 
 class StructuredDataUpdateRequest(BaseModel):
@@ -142,6 +195,37 @@ def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
 
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, next: str = "/"):
+    if _is_authenticated_request(request):
+        return RedirectResponse(url=next or "/", status_code=303)
+    return templates.TemplateResponse("login.html", {"request": request, "next": next, "error": ""})
+
+
+@app.post("/login")
+async def login_submit(request: Request, username: str = Form(...), password: str = Form(...), next: str = Form("/")):
+    normalized_username = username.strip()
+    if normalized_username == AUTH_USERNAME and password == AUTH_PASSWORD:
+        request.session["authenticated"] = True
+        request.session["username"] = normalized_username
+        return RedirectResponse(url=next or "/", status_code=303)
+    return templates.TemplateResponse(
+        "login.html",
+        {
+            "request": request,
+            "next": next or "/",
+            "error": "Invalid username or password",
+        },
+        status_code=401,
+    )
+
+
+@app.get("/logout")
+def logout(request: Request):
+    request.session.clear()
+    return RedirectResponse(url="/login", status_code=303)
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -165,29 +249,173 @@ def _translate_ingest_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=500, detail=str(exc))
 
 
+def _normalize_row_timestamp(value: str | None) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return datetime.now().isoformat(sep=" ", timespec="seconds")
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="timestamp must be ISO-8601 date or datetime") from exc
+    if raw and len(raw) == 10:
+        parsed = datetime.combine(parsed.date(), datetime.min.time())
+    return parsed.isoformat(sep=" ", timespec="seconds")
+
+
 def _is_truthy(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _parse_uploaded_messages(upload_payloads: list[tuple[str, bytes]], source: str) -> list[Any]:
-    parsed_messages = []
+def _job_progress_reporter(job_id: str):
+    def _report(payload: dict[str, object]) -> None:
+        normalized = dict(payload)
+        if "progress" in normalized:
+            try:
+                normalized["progress"] = max(0, min(100, int(float(normalized["progress"]))))
+            except Exception:
+                normalized["progress"] = 0
+        update_job_progress(job_id, **normalized)
+
+    return _report
+
+
+def _process_parsed_messages_with_progress(client, parsed_messages, progress_callback=None):
+    if progress_callback and "progress_callback" in inspect.signature(process_parsed_messages).parameters:
+        return process_parsed_messages(client, parsed_messages, progress_callback=progress_callback)
+    return process_parsed_messages(client, parsed_messages)
+
+
+def _process_manual_entry_with_progress(
+    client,
+    *,
+    name: str,
+    phone: str,
+    requirement: str,
+    location: str,
+    budget: str,
+    notes: str,
+    source: str,
+    progress_callback=None,
+):
+    if progress_callback and "progress_callback" in inspect.signature(process_manual_entry).parameters:
+        return process_manual_entry(
+            client,
+            name=name,
+            phone=phone,
+            requirement=requirement,
+            location=location,
+            budget=budget,
+            notes=notes,
+            source=source,
+            progress_callback=progress_callback,
+        )
+    return process_manual_entry(
+        client,
+        name=name,
+        phone=phone,
+        requirement=requirement,
+        location=location,
+        budget=budget,
+        notes=notes,
+        source=source,
+    )
+
+
+def _parse_upload_payload(
+    index: int,
+    total_files: int,
+    filename: str,
+    content: bytes,
+    source: str,
+) -> tuple[int, str, float, list[Any]]:
+    if not filename.lower().endswith(".txt"):
+        raise HTTPException(status_code=400, detail="Only .txt WhatsApp export files are supported")
+
+    file_size_mb = len(content) / (1024 * 1024)
+    text = content.decode("utf-8", errors="ignore")
+    file_source = source.strip()
+    if total_files > 1 or not file_source:
+        file_source = _source_from_upload_name(filename, index)
+    parsed_messages = parse_combined_whatsapp_export(text, file_source)
+    return index, filename, file_size_mb, parsed_messages
+
+
+def _parse_uploaded_messages(
+    upload_payloads: list[tuple[str, bytes]],
+    source: str,
+    *,
+    progress_callback=None,
+) -> list[Any]:
+    parsed_messages: list[Any] = []
     total_size = 0.0
     large_files: list[tuple[str, float]] = []
+    total_files = len(upload_payloads)
 
-    for index, (filename, content) in enumerate(upload_payloads, start=1):
-        if not filename.lower().endswith(".txt"):
-            raise HTTPException(status_code=400, detail="Only .txt WhatsApp export files are supported")
+    if progress_callback:
+        progress_callback(
+            {
+                "stage": "parse",
+                "stage_label": "Parsing",
+                "message": f"Parsing {total_files} uploaded file{'s' if total_files != 1 else ''}.",
+                "progress": 12,
+                "processed_rows": 0,
+                "total_rows": total_files,
+            }
+        )
 
-        file_size_mb = len(content) / (1024 * 1024)
-        total_size += file_size_mb
-        if file_size_mb > 10:
-            large_files.append((filename, file_size_mb))
+    indexed_payloads = [
+        (index, total_files, filename, content, source)
+        for index, (filename, content) in enumerate(upload_payloads, start=1)
+    ]
+    ordered_results: dict[int, tuple[str, float, list[Any]]] = {}
+    completed_files = 0
 
-        text = content.decode("utf-8", errors="ignore")
-        file_source = source.strip()
-        if len(upload_payloads) > 1 or not file_source:
-            file_source = _source_from_upload_name(filename, index)
-        parsed_messages.extend(parse_combined_whatsapp_export(text, file_source))
+    if total_files > 1:
+        max_workers = min(total_files, _MAX_PARSE_WORKERS)
+        with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="matchlayer-parse") as executor:
+            future_map = {
+                executor.submit(_parse_upload_payload, index, file_count, filename, content, upload_source): index
+                for index, file_count, filename, content, upload_source in indexed_payloads
+            }
+            for future in as_completed(future_map):
+                index, filename, file_size_mb, batch_messages = future.result()
+                ordered_results[index] = (filename, file_size_mb, batch_messages)
+                completed_files += 1
+                total_size += file_size_mb
+                if file_size_mb > 10:
+                    large_files.append((filename, file_size_mb))
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "stage": "parse",
+                            "stage_label": "Parsing",
+                            "message": f"Parsed file {completed_files} of {total_files}: {filename}",
+                            "progress": 12 + int((completed_files / max(total_files, 1)) * 13),
+                            "processed_rows": completed_files,
+                            "total_rows": total_files,
+                        }
+                    )
+    else:
+        index, file_count, filename, content, upload_source = indexed_payloads[0]
+        parsed = _parse_upload_payload(index, file_count, filename, content, upload_source)
+        ordered_results[parsed[0]] = (parsed[1], parsed[2], parsed[3])
+        total_size = parsed[2]
+        if parsed[2] > 10:
+            large_files.append((parsed[1], parsed[2]))
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "parse",
+                    "stage_label": "Parsing",
+                    "message": f"Parsed file 1 of {total_files}: {parsed[1]}",
+                    "progress": 25,
+                    "processed_rows": 1,
+                    "total_rows": total_files,
+                }
+            )
+
+    for index in sorted(ordered_results):
+        parsed_messages.extend(ordered_results[index][2])
 
     if large_files:
         print(f"\n[WARN] Processing {len(large_files)} large file(s):")
@@ -199,19 +427,35 @@ def _parse_uploaded_messages(upload_payloads: list[tuple[str, bytes]], source: s
 
     if len(parsed_messages) > 100000:
         print(f"\n[WARN] Very large upload: {len(parsed_messages)} messages")
-        print("Only the most recent 50,000 leads will be kept in Structured Data.")
+        if _MAX_MESSAGES_PER_RUN > 0:
+            print(f"Only the most recent {_MAX_MESSAGES_PER_RUN:,} messages will be processed in this run.")
         print("Consider splitting into smaller batches for better performance.\n")
 
     return parsed_messages
 
 
-def _process_whatsapp_upload_job(upload_payloads: list[tuple[str, bytes]], source: str) -> dict[str, Any]:
-    parsed_messages = _parse_uploaded_messages(upload_payloads, source)
-    return process_parsed_messages(_client(), parsed_messages).__dict__
+def _process_whatsapp_upload_job(
+    upload_payloads: list[tuple[str, bytes]],
+    source: str,
+    *,
+    progress_callback=None,
+) -> dict[str, Any]:
+    parsed_messages = _parse_uploaded_messages(upload_payloads, source, progress_callback=progress_callback)
+    return _process_parsed_messages_with_progress(_client(), parsed_messages, progress_callback).__dict__
 
 
-def _process_whatsapp_paste_job(chat_text: str, source: str) -> dict[str, Any]:
-    return process_whatsapp_text(_client(), chat_text, source).__dict__
+def _process_whatsapp_paste_job(chat_text: str, source: str, *, progress_callback=None) -> dict[str, Any]:
+    if progress_callback:
+        progress_callback(
+            {
+                "stage": "parse",
+                "stage_label": "Parsing",
+                "message": "Parsing pasted chat text.",
+                "progress": 20,
+            }
+        )
+    parsed_messages = parse_combined_whatsapp_export(chat_text, source)
+    return _process_parsed_messages_with_progress(_client(), parsed_messages, progress_callback).__dict__
 
 
 def _process_manual_job(
@@ -223,8 +467,20 @@ def _process_manual_job(
     budget: str,
     notes: str,
     source: str,
+    progress_callback=None,
 ) -> dict[str, Any]:
-    return process_manual_entry(
+    if progress_callback:
+        progress_callback(
+            {
+                "stage": "parse",
+                "stage_label": "Parsing",
+                "message": "Preparing manual lead entry.",
+                "progress": 20,
+                "processed_rows": 1,
+                "total_rows": 1,
+            }
+        )
+    return _process_manual_entry_with_progress(
         _client(),
         name=name,
         phone=phone,
@@ -233,6 +489,7 @@ def _process_manual_job(
         budget=budget,
         notes=notes,
         source=source,
+        progress_callback=progress_callback,
     ).__dict__
 
 
@@ -256,7 +513,11 @@ async def ingest_whatsapp_file(
     if _is_truthy(background):
         job = submit_job(
             "whatsapp-file",
-            lambda payloads=upload_payloads, upload_source=source.strip(): _process_whatsapp_upload_job(payloads, upload_source),
+            lambda job_id, payloads=upload_payloads, upload_source=source.strip(): _process_whatsapp_upload_job(
+                payloads,
+                upload_source,
+                progress_callback=_job_progress_reporter(job_id),
+            ),
         )
         return JSONResponse(
             status_code=202,
@@ -288,7 +549,11 @@ async def ingest_whatsapp_paste(
     if _is_truthy(background):
         job = submit_job(
             "whatsapp-paste",
-            lambda payload_text=chat_text, payload_source=source.strip() or "WhatsApp Group": _process_whatsapp_paste_job(payload_text, payload_source),
+            lambda job_id, payload_text=chat_text, payload_source=source.strip() or "WhatsApp Group": _process_whatsapp_paste_job(
+                payload_text,
+                payload_source,
+                progress_callback=_job_progress_reporter(job_id),
+            ),
         )
         return JSONResponse(
             status_code=202,
@@ -325,7 +590,7 @@ async def ingest_manual(
     if _is_truthy(background):
         job = submit_job(
             "manual-entry",
-            lambda: _process_manual_job(
+            lambda job_id: _process_manual_job(
                 name=name.strip(),
                 phone=phone.strip(),
                 requirement=requirement.strip(),
@@ -333,6 +598,7 @@ async def ingest_manual(
                 budget=budget.strip(),
                 notes=notes.strip(),
                 source=source.strip() or "Manual",
+                progress_callback=_job_progress_reporter(job_id),
             ),
         )
         return JSONResponse(
@@ -368,6 +634,33 @@ def get_job_status(job_id: str):
     if job is None:
         raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}")
     return job
+
+
+@app.get("/jobs/{job_id}/events")
+def stream_job_status(job_id: str):
+    if get_job(job_id) is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job: {job_id}")
+
+    def event_stream():
+        last_version = -1
+        while True:
+            job = get_job(job_id)
+            if job is None:
+                yield "event: error\ndata: " + json.dumps({"detail": f"Unknown job: {job_id}"}) + "\n\n"
+                break
+            version = int(job.get("version", 0) or 0)
+            if version != last_version:
+                last_version = version
+                yield "event: progress\ndata: " + json.dumps(job) + "\n\n"
+            if job.get("status") in {"success", "failure"}:
+                break
+            time.sleep(0.5)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/data")
@@ -461,17 +754,35 @@ def sync_data():
 def glide_view(
     mode: str = "today",
     search: str = "",
+    lead_type: str = "",
+    property_type: str = "",
+    from_date: str | None = None,
+    to_date: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ):
     try:
+        parsed_from = parse_optional_date(from_date)
+        parsed_to = parse_optional_date(to_date)
+        if parsed_from and parsed_to and parsed_from > parsed_to:
+            raise HTTPException(status_code=400, detail="from_date cannot be after to_date")
         payload = get_glide_view_dataset(
             _client(),
             mode=mode,
             search=search,
+            lead_type=lead_type,
+            property_type=property_type,
+            from_date=parsed_from,
+            to_date=parsed_to,
             limit=limit,
             offset=offset,
         )
+        payload["filters"] = {
+            "from_date": parsed_from.isoformat() if parsed_from else None,
+            "to_date": parsed_to.isoformat() if parsed_to else None,
+        }
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -544,10 +855,73 @@ def glide_filter_config():
         raise _translate_ingest_error(exc) from exc
 
 
-@app.get("/glide/deals-log")
-def glide_deals_log(limit: int = 25, offset: int = 0):
+@app.get("/search")
+def search_reference_data(
+    query: str = "",
+    entry_type: str = "",
+    lead_type: str = "",
+    location: str = "",
+    property_type: str = "",
+    broker: str = "",
+    phone: str = "",
+    limit: int = 50,
+    offset: int = 0,
+    include_filters: bool = False,
+):
     try:
-        return _client().get_table_page("Deals Log", limit=limit, offset=offset)
+        client = _client()
+        payload = client.search_reference_data(
+            query=query,
+            entry_type=entry_type,
+            lead_type=lead_type,
+            location=location,
+            property_type=property_type,
+            broker=broker,
+            phone=phone,
+            limit=limit,
+            offset=offset,
+        )
+        payload["filters"] = {
+            "query": query,
+            "entry_type": entry_type,
+            "lead_type": lead_type,
+            "location": location,
+            "property_type": property_type,
+            "broker": broker,
+            "phone": phone,
+        }
+        if include_filters:
+            payload["filter_options"] = client.get_reference_filter_options()
+        return payload
+    except Exception as exc:
+        raise _translate_ingest_error(exc) from exc
+
+
+@app.get("/search/options")
+def search_reference_options():
+    try:
+        return _client().get_reference_filter_options()
+    except Exception as exc:
+        raise _translate_ingest_error(exc) from exc
+
+
+@app.get("/glide/deals-log")
+def glide_deals_log(limit: int = 25, offset: int = 0, from_date: str | None = None, to_date: str | None = None):
+    try:
+        parsed_from = parse_optional_date(from_date)
+        parsed_to = parse_optional_date(to_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid date filter: {exc}") from exc
+    if parsed_from and parsed_to and parsed_from > parsed_to:
+        raise HTTPException(status_code=400, detail="from_date cannot be after to_date")
+    try:
+        return _client().get_table_page(
+            "Deals Log",
+            limit=limit,
+            offset=offset,
+            from_date=parsed_from.isoformat() if parsed_from else None,
+            to_date=parsed_to.isoformat() if parsed_to else None,
+        )
     except Exception as exc:
         raise _translate_ingest_error(exc) from exc
 
@@ -577,9 +951,22 @@ def glide_create_deals_log(payload: DealsLogCreateRequest):
 
 
 @app.get("/glide/alerts-leads")
-def glide_alerts_leads(limit: int = 25, offset: int = 0):
+def glide_alerts_leads(limit: int = 25, offset: int = 0, from_date: str | None = None, to_date: str | None = None):
     try:
-        return _client().get_table_page("Alerts Leads", limit=limit, offset=offset)
+        parsed_from = parse_optional_date(from_date)
+        parsed_to = parse_optional_date(to_date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid date filter: {exc}") from exc
+    if parsed_from and parsed_to and parsed_from > parsed_to:
+        raise HTTPException(status_code=400, detail="from_date cannot be after to_date")
+    try:
+        return _client().get_table_page(
+            "Alerts Leads",
+            limit=limit,
+            offset=offset,
+            from_date=parsed_from.isoformat() if parsed_from else None,
+            to_date=parsed_to.isoformat() if parsed_to else None,
+        )
     except Exception as exc:
         raise _translate_ingest_error(exc) from exc
 
@@ -593,12 +980,33 @@ def glide_create_alerts_lead(payload: AlertsLeadCreateRequest):
         _client().append_rows(
             "Alerts Leads",
             [[
-                datetime.now().isoformat(sep=" ", timespec="seconds"),
+                _normalize_row_timestamp(payload.timestamp),
                 contact,
-                "Website",
+                payload.source.strip() or "Website",
+                payload.follow_up_message.strip(),
             ]],
         )
         return {"message": "Alerts lead captured successfully"}
+    except Exception as exc:
+        raise _translate_ingest_error(exc) from exc
+
+
+@app.delete("/glide/view/{lead_id}")
+def glide_delete_lead(lead_id: str, payload: LeadDeleteRequest):
+    normalized_lead_id = lead_id.strip()
+    if not normalized_lead_id:
+        raise HTTPException(status_code=400, detail="lead_id is required")
+    if payload.confirm.strip().upper() != "DELETE":
+        raise HTTPException(status_code=400, detail="Type DELETE to confirm lead deletion")
+
+    try:
+        result = _client().delete_lead(normalized_lead_id)
+        invalidate_glide_cache()
+        return {
+            "message": "Lead deleted successfully",
+            "lead_id": normalized_lead_id,
+            "deleted": result,
+        }
     except Exception as exc:
         raise _translate_ingest_error(exc) from exc
 
@@ -763,7 +1171,7 @@ def get_settings():
         return {
             "match_threshold": config.get("match_threshold", 40),
             "dedup_window_days": config.get("dedup_window_days", 1),
-            "lookback_days": config.get("lookback_days", 0),
+            "lookback_days": config.get("lookback_days", 365),
             "top_leads_count": config.get("top_leads_count", 10),
             "top_leads_validation_size": config.get("top_leads_validation_size", 10),
             "glide_activity_window_days": config.get("glide_activity_window_days", 120),

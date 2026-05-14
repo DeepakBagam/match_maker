@@ -6,12 +6,9 @@ from typing import Any
 
 from .pipeline import _build_final_validation_rows, _load_config, _write_outputs
 from .schemas import (
-    MANUAL_COLUMNS,
-    RAW_COLUMNS,
     StructuredLead,
 )
 from .matcher import compute_matches, compute_priority, demand_summary, supply_summary, top_leads
-from .sheets_client import PROCESSED_MESSAGE_COLUMNS
 
 
 @dataclass
@@ -51,6 +48,8 @@ def _lead_date(lead: StructuredLead) -> date | None:
 
 def _structured_rows_from_sheet(client) -> list[StructuredLead]:
     client.ensure_structure()
+    if hasattr(client, "read_structured_leads_fast"):
+        return client.read_structured_leads_fast()
     rows = client.read_structured()
     payload_rows = rows[1:] if rows else []
     return [StructuredLead.from_row(row) for row in payload_rows if any(str(cell).strip() for cell in row)]
@@ -80,35 +79,17 @@ def get_structured_dataset(
     return payload
 
 
-def _keep_row_by_timestamp(row: list[str], index: int, from_date: date | None, to_date: date | None) -> bool:
-    raw_value = row[index] if index < len(row) else ""
-    if not raw_value:
-        return True
-    try:
-        row_date = datetime.fromisoformat(raw_value).date()
-    except ValueError:
-        return True
-    return not _date_in_range(row_date, from_date, to_date)
-
-
 def _rewrite_tracking_tabs(client, from_date: date | None, to_date: date | None, clear_all: bool) -> None:
     if clear_all:
-        client.replace_rows("Raw Data", RAW_COLUMNS, [])
-        client.replace_rows("Processed Messages", PROCESSED_MESSAGE_COLUMNS, [])
-        client.replace_rows("Manual Entries", MANUAL_COLUMNS, [])
+        client.clear_tab("Raw Data")
+        client.clear_tab("Processed Messages")
+        client.clear_tab("Manual Entries")
         return
-
-    raw_rows = client.get_table("Raw Data")
-    processed_rows = client.get_table("Processed Messages")
-    manual_rows = client.get_table("Manual Entries")
-
-    filtered_raw = [row for row in raw_rows[1:] if _keep_row_by_timestamp(row, 3, from_date, to_date)]
-    filtered_processed = [row for row in processed_rows[1:] if _keep_row_by_timestamp(row, 2, from_date, to_date)]
-    filtered_manual = [row for row in manual_rows[1:] if _keep_row_by_timestamp(row, 0, from_date, to_date)]
-
-    client.replace_rows("Raw Data", RAW_COLUMNS, filtered_raw)
-    client.replace_rows("Processed Messages", PROCESSED_MESSAGE_COLUMNS, filtered_processed)
-    client.replace_rows("Manual Entries", MANUAL_COLUMNS, filtered_manual)
+    from_ts = f"{from_date.isoformat()} 00:00:00" if from_date else None
+    to_ts = f"{to_date.isoformat()} 23:59:59" if to_date else None
+    client.delete_rows_by_text_range("Raw Data", "Timestamp", from_ts, to_ts)
+    client.delete_rows_by_text_range("Processed Messages", "Timestamp", from_ts, to_ts)
+    client.delete_rows_by_text_range("Manual Entries", "Submitted At", from_ts, to_ts)
 
 
 def _rewrite_analytics_tabs(client, leads: list[StructuredLead]) -> None:
@@ -134,6 +115,7 @@ def _rewrite_analytics_tabs(client, leads: list[StructuredLead]) -> None:
     _write_outputs(
         client,
         leads,
+        leads,
         validation_rows,
         final_validation_rows,
         matches,
@@ -154,14 +136,20 @@ def clear_structured_data(client, mode: str, from_date: date | None = None, to_d
         raise ValueError("from_date cannot be after to_date")
 
     client.ensure_structure()
-    leads = _structured_rows_from_sheet(client)
-    original_count = len(leads)
+    original_count = client.count_rows("Structured Data")
     clear_all = mode == "all"
 
     if clear_all:
-        remaining = []
+        client.clear_tab("Structured Data")
     else:
-        remaining = [lead for lead in leads if not _date_in_range(_lead_date(lead), from_date, to_date)]
+        client.delete_rows_by_text_range(
+            "Structured Data",
+            "Date",
+            from_date.isoformat() if from_date else None,
+            to_date.isoformat() if to_date else None,
+        )
+
+    remaining = _structured_rows_from_sheet(client)
 
     deleted_rows = original_count - len(remaining)
 

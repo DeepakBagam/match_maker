@@ -13,6 +13,7 @@ class DedupResult:
     leads: list[StructuredLead]
     new_count: int
     duplicate_count: int
+    changed_leads: list[StructuredLead]
 
 
 def _as_datetime(value: str) -> datetime:
@@ -94,9 +95,10 @@ def _find_duplicate_candidate(
 
 
 def deduplicate(existing: list[StructuredLead], incoming: list[StructuredLead], dedup_days: int = 1) -> DedupResult:
-    merged = [StructuredLead(dict(lead.values)) for lead in existing]
+    merged = list(existing)
     duplicate_count = 0
     new_count = 0
+    changed_leads: list[StructuredLead] = []
     buckets: dict[tuple[str, ...], list[StructuredLead]] = defaultdict(list)
 
     for lead in merged:
@@ -109,13 +111,24 @@ def deduplicate(existing: list[StructuredLead], incoming: list[StructuredLead], 
             duplicate_count += 1
             found.values["Repeat Count"] = int(found.values.get("Repeat Count", 1)) + 1
             found.values["Last Seen"] = candidate.values.get("Last Seen")
+            changed_leads.append(found)
             continue
 
         new_count += 1
         merged.append(candidate)
         buckets[_candidate_key(candidate)].append(candidate)
+        changed_leads.append(candidate)
 
-    return DedupResult(leads=merged, new_count=new_count, duplicate_count=duplicate_count)
+    deduped_changed: list[StructuredLead] = []
+    seen_ids: set[int] = set()
+    for lead in changed_leads:
+        marker = id(lead)
+        if marker in seen_ids:
+            continue
+        seen_ids.add(marker)
+        deduped_changed.append(lead)
+
+    return DedupResult(leads=merged, new_count=new_count, duplicate_count=duplicate_count, changed_leads=deduped_changed)
 
 
 def recency_score(last_seen_iso: str, now: datetime, max_days: int = 14) -> float:

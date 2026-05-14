@@ -6,11 +6,9 @@ Processes files in chunks to avoid memory issues.
 from __future__ import annotations
 
 import re
-from datetime import datetime
 from typing import Iterator
 
-from dateutil import parser as dt_parser
-
+from .parser import _parse_timestamp
 from .schemas import ParsedMessage
 
 
@@ -19,13 +17,9 @@ _MESSAGE_START_PATTERNS = [
         r"^\[(?P<date>\d{1,2}[/-]\d{1,2}[/-]\d{2,4}),\s*(?P<time>\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?)\]\s*(?P<sender>[^:]+):\s?(?P<body>.*)$"
     ),
     re.compile(
-        r"^(?P<date>\d{1,2}[/-]\d{1,2}[/-]\d{2,4}),?\s+(?P<time>\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?)\\s+-\s+(?P<sender>[^:]+):\s?(?P<body>.*)$"
+        r"^(?P<date>\d{1,2}[/-]\d{1,2}[/-]\d{2,4}),?\s+(?P<time>\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp][Mm])?)\s+-\s+(?P<sender>[^:]+):\s?(?P<body>.*)$"
     ),
 ]
-
-
-def _parse_timestamp(date_text: str, time_text: str) -> datetime:
-    return dt_parser.parse(f"{date_text} {time_text}", dayfirst=True)
 
 
 def _match_message_start(line: str):
