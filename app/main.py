@@ -504,13 +504,12 @@ async def ingest_whatsapp_file(
     background: str = Form(default="false"),
 ):
     uploads = [item for item in file if item.filename]
-    if not uploads:
+    txt_uploads = [item for item in uploads if item.filename and item.filename.lower().endswith(".txt")]
+    if not txt_uploads:
         raise HTTPException(status_code=400, detail="At least one .txt WhatsApp export file is required")
 
     upload_payloads: list[tuple[str, bytes]] = []
-    for upload in uploads:
-        if not upload.filename.lower().endswith(".txt"):
-            raise HTTPException(status_code=400, detail="Only .txt WhatsApp export files are supported")
+    for upload in txt_uploads:
         content = await upload.read()
         upload_payloads.append((upload.filename, content))
 
