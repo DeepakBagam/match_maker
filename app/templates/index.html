@@ -1344,7 +1344,7 @@
       tab: "Structured Data",
       fromDate: "",
       toDate: "",
-      pageSize: 50,
+      pageSize: 25,
       offset: 0,
       totalRows: 0,
       lastPayload: null,
@@ -1890,7 +1890,7 @@
     async function loadGlideList(mode, search = "") {
       const query = new URLSearchParams();
       query.set("mode", mode);
-      query.set("limit", "50");
+      query.set("limit", "25");
       if (search.trim()) {
         query.set("search", search.trim());
       }
@@ -2280,13 +2280,6 @@
         } else {
           renderGlideDetail(null);
         }
-        if (!glideState.referenceFiltersLoaded) {
-          await loadReferenceFilterOptions();
-        }
-        const backgroundMode = glideState.queueMode === "today" ? "all" : "today";
-        queueMicrotask(() => {
-          ensureGlideModeLoaded(backgroundMode, glideState.leadSearch).catch(() => {});
-        });
         glideState.loaded = true;
         glideState.needsRefresh = false;
         setGlideStatus(forceRefresh ? "Leads refreshed." : "Leads loaded.", "success");
@@ -2649,7 +2642,7 @@
 
     document.getElementById("applyDataFiltersBtn").addEventListener("click", async () => {
       dataState.tab = document.getElementById("data-tab-select").value || "Structured Data";
-      dataState.pageSize = Number(document.getElementById("data-page-size").value || 50);
+      dataState.pageSize = Number(document.getElementById("data-page-size").value || 25);
       dataState.fromDate = document.getElementById("data-from-date").value;
       dataState.toDate = document.getElementById("data-to-date").value;
       dataState.offset = 0;
@@ -2658,11 +2651,11 @@
 
     document.getElementById("resetDataFiltersBtn").addEventListener("click", async () => {
       document.getElementById("data-tab-select").value = "Structured Data";
-      document.getElementById("data-page-size").value = "50";
+      document.getElementById("data-page-size").value = "25";
       document.getElementById("data-from-date").value = "";
       document.getElementById("data-to-date").value = "";
       dataState.tab = "Structured Data";
-      dataState.pageSize = 50;
+      dataState.pageSize = 25;
       dataState.fromDate = "";
       dataState.toDate = "";
       dataState.offset = 0;
@@ -2678,7 +2671,7 @@
     });
 
     document.getElementById("data-page-size").addEventListener("change", async (event) => {
-      dataState.pageSize = Number(event.target.value || 50);
+      dataState.pageSize = Number(event.target.value || 25);
       dataState.offset = 0;
       await loadData();
     });

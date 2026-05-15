@@ -202,6 +202,7 @@
       queueRows: [],
       queuePage: 1,
       queuePageSize: 10,
+      queueSearchHandle: null,
     };
 
     function setStatus(message, tone = "neutral") {
@@ -321,10 +322,20 @@
       if (state.queueToDate) {
         query.set("to_date", state.queueToDate);
       }
+      query.set("limit", "25");
       const payload = await apiFetch(`/glide/view?${query.toString()}`);
       state.queueRows = payload.rows || [];
       renderQueue();
       setStatus("Queue loaded from shared leads data.", "success");
+    }
+
+    function scheduleQueueReload() {
+      if (state.queueSearchHandle) {
+        window.clearTimeout(state.queueSearchHandle);
+      }
+      state.queueSearchHandle = window.setTimeout(() => {
+        loadQueue().catch((error) => setStatus(error.message, "error"));
+      }, 250);
     }
 
     function renderReferenceResults(rows) {
@@ -457,10 +468,10 @@
       });
     });
 
-    document.getElementById("queueSearch").addEventListener("input", async (event) => {
+    document.getElementById("queueSearch").addEventListener("input", (event) => {
       state.queueSearch = event.target.value || "";
       state.queuePage = 1;
-      await loadQueue();
+      scheduleQueueReload();
     });
 
     document.getElementById("queueFromDate").addEventListener("change", async (event) => {
