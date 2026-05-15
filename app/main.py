@@ -15,6 +15,7 @@ from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.templating import Jinja2Templates
 from openpyxl import Workbook
 from pydantic import BaseModel
@@ -48,9 +49,6 @@ SESSION_SECRET = os.getenv("MATCHER_SESSION_SECRET", "change-me-main-session-sec
 INTERNAL_PROXY_TOKEN = os.getenv("MATCHER_INTERNAL_PROXY_TOKEN", "change-me-internal-proxy-token")
 AUTH_EXEMPT_PATHS = {"/login", "/logout", "/health"}
 
-app = FastAPI(title="Match Maker")
-app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
-
 _CPU_COUNT = os.cpu_count() or 1
 _MAX_PARSE_WORKERS = max(1, int(os.getenv("MATCHLAYER_PARSE_WORKERS", str(min(8, _CPU_COUNT)))))
 _MAX_MESSAGES_PER_RUN = max(0, int(os.getenv("MATCHLAYER_MAX_MESSAGES_PER_RUN", "0")))
@@ -76,13 +74,18 @@ def _unauthorized_response(request: Request):
     return JSONResponse(status_code=401, content={"detail": "Authentication required"})
 
 
-@app.middleware("http")
-async def require_authentication(request: Request, call_next):
-    if request.url.path in AUTH_EXEMPT_PATHS:
-        return await call_next(request)
-    if _is_authenticated_request(request):
-        return await call_next(request)
-    return _unauthorized_response(request)
+class AuthenticationMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path in AUTH_EXEMPT_PATHS:
+            return await call_next(request)
+        if _is_authenticated_request(request):
+            return await call_next(request)
+        return _unauthorized_response(request)
+
+
+app = FastAPI(title="Match Maker")
+app.add_middleware(AuthenticationMiddleware)
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
 
 
 class ClearDataRequest(BaseModel):

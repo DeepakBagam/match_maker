@@ -7,6 +7,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 
@@ -17,9 +18,6 @@ AUTH_PASSWORD = os.getenv("MATCHER_AUTH_PASSWORD", "home@A1")
 SESSION_SECRET = os.getenv("MOBILE_SESSION_SECRET", "change-me-mobile-session-secret")
 INTERNAL_PROXY_TOKEN = os.getenv("MATCHER_INTERNAL_PROXY_TOKEN", "change-me-internal-proxy-token")
 AUTH_EXEMPT_PATHS = {"/login", "/logout", "/health"}
-
-app = FastAPI(title="Leads Mobile App")
-app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
 
 
 def _request_path_with_query(request: Request) -> str:
@@ -40,13 +38,18 @@ def _unauthorized_response(request: Request):
     return Response(content='{"detail":"Authentication required"}', status_code=401, media_type="application/json")
 
 
-@app.middleware("http")
-async def require_authentication(request: Request, call_next):
-    if request.url.path in AUTH_EXEMPT_PATHS:
-        return await call_next(request)
-    if _is_authenticated_request(request):
-        return await call_next(request)
-    return _unauthorized_response(request)
+class AuthenticationMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path in AUTH_EXEMPT_PATHS:
+            return await call_next(request)
+        if _is_authenticated_request(request):
+            return await call_next(request)
+        return _unauthorized_response(request)
+
+
+app = FastAPI(title="Leads Mobile App")
+app.add_middleware(AuthenticationMiddleware)
+app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
 
 
 @app.get("/login")
