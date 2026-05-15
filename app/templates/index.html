@@ -964,10 +964,10 @@
       document.getElementById("response").hidden = viewId === "data-view" || viewId === "glide-view";
 
       if (viewId === "data-view" && !dataState.loaded) {
-        initializeIdleDataView();
+        loadData();
       }
-      if (viewId === "glide-view" && !glideState.loaded) {
-        initializeIdleGlideView();
+      if (viewId === "glide-view" && (!glideState.loaded || glideState.needsRefresh)) {
+        loadGlideView(glideState.needsRefresh);
       }
     }
 
@@ -1398,25 +1398,6 @@
       todaySearchHandle: null,
       allSearchHandle: null,
     };
-
-    function initializeIdleDataView() {
-      if (dataState.loaded) {
-        return;
-      }
-      setDataLoading("Data view is idle. Click Refresh Data or Apply Filters to load rows.");
-      setDataStatus("Data auto-loading is disabled for faster startup. Load rows only when needed.");
-    }
-
-    function initializeIdleGlideView() {
-      if (glideState.loaded || glideState.loading) {
-        return;
-      }
-      renderGlideList("glideTodayList", []);
-      renderGlideList("glideAllList", []);
-      renderGlideDetail(null);
-      document.getElementById("glideLeadCount").textContent = "0 Today";
-      setGlideStatus("Queue auto-loading is disabled for faster startup. Click Refresh Glide to load leads.");
-    }
 
     function getFilenameFromDisposition(headerValue, fallbackName) {
       const match = headerValue && headerValue.match(/filename=\"?([^\";]+)\"?/i);
@@ -1909,7 +1890,7 @@
     async function loadGlideList(mode, search = "") {
       const query = new URLSearchParams();
       query.set("mode", mode);
-      query.set("limit", "200");
+      query.set("limit", "50");
       if (search.trim()) {
         query.set("search", search.trim());
       }
