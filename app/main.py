@@ -64,7 +64,8 @@ def _request_path_with_query(request: Request) -> str:
 def _is_authenticated_request(request: Request) -> bool:
     if request.headers.get("X-Internal-Auth", "") == INTERNAL_PROXY_TOKEN:
         return True
-    return bool(request.session.get("authenticated"))
+    session = request.scope.get("session")
+    return bool(session and session.get("authenticated"))
 
 
 def _unauthorized_response(request: Request):
