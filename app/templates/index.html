@@ -963,11 +963,11 @@
       processAllBtn.hidden = viewId === "data-view" || viewId === "glide-view";
       document.getElementById("response").hidden = viewId === "data-view" || viewId === "glide-view";
 
-      if (viewId === "data-view") {
-        loadData();
+      if (viewId === "data-view" && !dataState.loaded) {
+        initializeIdleDataView();
       }
-      if (viewId === "glide-view" && (!glideState.loaded || glideState.needsRefresh)) {
-        loadGlideView(glideState.needsRefresh);
+      if (viewId === "glide-view" && !glideState.loaded) {
+        initializeIdleGlideView();
       }
     }
 
@@ -1344,7 +1344,7 @@
       tab: "Structured Data",
       fromDate: "",
       toDate: "",
-      pageSize: 250,
+      pageSize: 50,
       offset: 0,
       totalRows: 0,
       lastPayload: null,
@@ -1398,6 +1398,25 @@
       todaySearchHandle: null,
       allSearchHandle: null,
     };
+
+    function initializeIdleDataView() {
+      if (dataState.loaded) {
+        return;
+      }
+      setDataLoading("Data view is idle. Click Refresh Data or Apply Filters to load rows.");
+      setDataStatus("Data auto-loading is disabled for faster startup. Load rows only when needed.");
+    }
+
+    function initializeIdleGlideView() {
+      if (glideState.loaded || glideState.loading) {
+        return;
+      }
+      renderGlideList("glideTodayList", []);
+      renderGlideList("glideAllList", []);
+      renderGlideDetail(null);
+      document.getElementById("glideLeadCount").textContent = "0 Today";
+      setGlideStatus("Queue auto-loading is disabled for faster startup. Click Refresh Glide to load leads.");
+    }
 
     function getFilenameFromDisposition(headerValue, fallbackName) {
       const match = headerValue && headerValue.match(/filename=\"?([^\";]+)\"?/i);
@@ -2649,7 +2668,7 @@
 
     document.getElementById("applyDataFiltersBtn").addEventListener("click", async () => {
       dataState.tab = document.getElementById("data-tab-select").value || "Structured Data";
-      dataState.pageSize = Number(document.getElementById("data-page-size").value || 250);
+      dataState.pageSize = Number(document.getElementById("data-page-size").value || 50);
       dataState.fromDate = document.getElementById("data-from-date").value;
       dataState.toDate = document.getElementById("data-to-date").value;
       dataState.offset = 0;
@@ -2658,11 +2677,11 @@
 
     document.getElementById("resetDataFiltersBtn").addEventListener("click", async () => {
       document.getElementById("data-tab-select").value = "Structured Data";
-      document.getElementById("data-page-size").value = "250";
+      document.getElementById("data-page-size").value = "50";
       document.getElementById("data-from-date").value = "";
       document.getElementById("data-to-date").value = "";
       dataState.tab = "Structured Data";
-      dataState.pageSize = 250;
+      dataState.pageSize = 50;
       dataState.fromDate = "";
       dataState.toDate = "";
       dataState.offset = 0;
@@ -2678,7 +2697,7 @@
     });
 
     document.getElementById("data-page-size").addEventListener("change", async (event) => {
-      dataState.pageSize = Number(event.target.value || 250);
+      dataState.pageSize = Number(event.target.value || 50);
       dataState.offset = 0;
       await loadData();
     });
