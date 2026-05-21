@@ -16,6 +16,7 @@ GLIDE_VIEW_COLUMNS = [
     "lead_type",
     "entry_type",
     "area",
+    "property_type",
     "bhk",
     "budget",
     "transaction_type",
@@ -190,6 +191,26 @@ def _match_property_summary(match_row: dict[str, str]) -> str:
     return " | ".join(part for part in parts if part)
 
 
+def _lead_recency_value(*values: object) -> str:
+    best: datetime | None = None
+    for value in values:
+        parsed = _parse_datetime(value)
+        if parsed and (best is None or parsed > best):
+            best = parsed
+    return best.isoformat(sep=" ", timespec="seconds") if best else ""
+
+
+def _lead_sort_key(item: dict[str, str]) -> tuple[float, float, int, str, str]:
+    recency = _parse_datetime(item.get("last_seen_at") or item.get("lead_date") or item.get("last_interaction_date"))
+    recency_ts = recency.timestamp() if recency else float("-inf")
+    try:
+        match_count = float(item.get("match_count") or 0)
+    except Exception:
+        match_count = 0.0
+    priority_rank = {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "UNRANKED": 3}.get(item.get("priority", ""), 4)
+    return (-recency_ts, -match_count, priority_rank, item.get("name", "").lower(), item.get("lead_id", ""))
+
+
 def _load_structured_leads(client) -> list[StructuredLead]:
     client.ensure_structure()
     rows = client.get_table("Structured Data")
@@ -238,35 +259,53 @@ def _load_glide_base_rows(client) -> list[dict[str, object]]:
     return [{column: row[column] for column in columns} for row in rows]
 
 
-def _load_match_summary_from_rows(match_rows: list[dict[str, str]]) -> dict[str, dict[str, Any]]:
+def _load_match_summary_from_rows(
+    match_rows: list[dict[str, str]],
+    counterparty_recency_by_lead: dict[str, str] | None = None,
+) -> dict[str, dict[str, Any]]:
     lead_map: dict[str, dict[str, Any]] = {}
+    counterparty_recency_by_lead = counterparty_recency_by_lead or {}
     for row in match_rows:
-        for lead_key, broker_name_key, broker_phone_key, budget_key in (
-            ("Buyer Lead_ID", "Seller Name", "Seller Phone", "Seller Budget"),
-            ("Seller Lead_ID", "Buyer Name", "Buyer Phone", "Buyer Budget"),
+        for lead_key, counterparty_key, broker_name_key, broker_phone_key, budget_key in (
+            ("Buyer Lead_ID", "Seller Lead_ID", "Seller Name", "Seller Phone", "Seller Budget"),
+            ("Seller Lead_ID", "Buyer Lead_ID", "Buyer Name", "Buyer Phone", "Buyer Budget"),
         ):
             lead_id = _safe_str(row.get(lead_key, ""))
             if not lead_id:
                 continue
             bucket = lead_map.setdefault(lead_id, {"match_count": 0, "slots": []})
             bucket["match_count"] += 1
-            if len(bucket["slots"]) < 3:
-                bucket["slots"].append(
-                    {
-                        "property_summary": _match_property_summary(
-                            {
-                                "Property Type": row.get("Property Type", ""),
-                                "Location": row.get("Location", ""),
-                                "BHK": row.get("BHK", ""),
-                                "Seller Budget": row.get(budget_key, ""),
-                                "Buyer Budget": row.get(budget_key, ""),
-                            }
-                        ),
-                        "broker_name": _safe_str(row.get(broker_name_key, "")),
-                        "broker_phone": _safe_str(row.get(broker_phone_key, "")),
-                        "match_reason": _safe_str(row.get("Match Reason", "")),
-                    }
-                )
+            counterparty_lead_id = _safe_str(row.get(counterparty_key, ""))
+            bucket["slots"].append(
+                {
+                    "property_summary": _match_property_summary(
+                        {
+                            "Property Type": row.get("Property Type", ""),
+                            "Location": row.get("Location", ""),
+                            "BHK": row.get("BHK", ""),
+                            "Seller Budget": row.get(budget_key, ""),
+                            "Buyer Budget": row.get(budget_key, ""),
+                        }
+                    ),
+                    "broker_name": _safe_str(row.get(broker_name_key, "")),
+                    "broker_phone": _safe_str(row.get(broker_phone_key, "")),
+                    "match_reason": _safe_str(row.get("Match Reason", "")),
+                    "counterparty_recency": counterparty_recency_by_lead.get(counterparty_lead_id, ""),
+                    "matched_at": _safe_str(row.get("Matched At", "")),
+                    "match_score": _safe_str(row.get("Match Score", "")),
+                }
+            )
+    for bucket in lead_map.values():
+        bucket["slots"].sort(
+            key=lambda slot: (
+                slot.get("counterparty_recency", ""),
+                float(slot.get("match_score") or 0),
+                slot.get("matched_at", ""),
+                slot.get("broker_name", "").lower(),
+            ),
+            reverse=True,
+        )
+        bucket["slots"] = bucket["slots"][:3]
     return lead_map
 
 
@@ -276,43 +315,56 @@ def _load_match_summary_by_lead(client) -> dict[str, dict[str, Any]]:
     if not hasattr(client, "_connect"):
         dataset = client.get_table_rows("Matches")
         rows = dataset.get("rows", [])
+        leads = _load_structured_leads(client)
+        counterparty_recency_by_lead = {
+            _safe_str(lead.values.get("Lead_ID")): _lead_recency_value(lead.values.get("Last Seen"), lead.values.get("Date"))
+            for lead in leads
+        }
         normalized_rows = [{column: _safe_str(row.get(column, "")) for column in MATCH_COLUMNS} for row in rows]
-        return _load_match_summary_from_rows(normalized_rows)
+        return _load_match_summary_from_rows(normalized_rows, counterparty_recency_by_lead)
     sql = f'''
         WITH normalized AS (
             SELECT
-                "{_column_name("Buyer Lead_ID")}" AS lead_id,
-                "{_column_name("Seller Name")}" AS broker_name,
-                "{_column_name("Seller Phone")}" AS broker_phone,
-                "{_column_name("Property Type")}" AS property_type,
-                "{_column_name("Location")}" AS location,
-                "{_column_name("BHK")}" AS bhk,
-                "{_column_name("Seller Budget")}" AS budget,
-                "{_column_name("Match Reason")}" AS match_reason,
-                CAST(COALESCE("{_column_name("Match Score")}", '0') AS REAL) AS match_score,
-                COALESCE("{_column_name("Matched At")}", '') AS matched_at
-            FROM "{matches_table}"
-            WHERE COALESCE("{_column_name("Buyer Lead_ID")}", '') <> ''
+                source_match."{_column_name("Buyer Lead_ID")}" AS lead_id,
+                source_match."{_column_name("Seller Lead_ID")}" AS counterparty_lead_id,
+                source_match."{_column_name("Seller Name")}" AS broker_name,
+                source_match."{_column_name("Seller Phone")}" AS broker_phone,
+                source_match."{_column_name("Property Type")}" AS property_type,
+                source_match."{_column_name("Location")}" AS location,
+                source_match."{_column_name("BHK")}" AS bhk,
+                source_match."{_column_name("Seller Budget")}" AS budget,
+                source_match."{_column_name("Match Reason")}" AS match_reason,
+                CAST(COALESCE(source_match."{_column_name("Match Score")}", '0') AS REAL) AS match_score,
+                COALESCE(source_match."{_column_name("Matched At")}", '') AS matched_at,
+                COALESCE(NULLIF(counterparty."{_column_name("Last Seen")}", ''), NULLIF(counterparty."{_column_name("Date")}", ''), '') AS counterparty_recency
+            FROM "{matches_table}" AS source_match
+            LEFT JOIN "{_table_name("Structured Data")}" AS counterparty
+                ON counterparty."{_column_name("Lead_ID")}" = source_match."{_column_name("Seller Lead_ID")}"
+            WHERE COALESCE(source_match."{_column_name("Buyer Lead_ID")}", '') <> ''
             UNION ALL
             SELECT
-                "{_column_name("Seller Lead_ID")}" AS lead_id,
-                "{_column_name("Buyer Name")}" AS broker_name,
-                "{_column_name("Buyer Phone")}" AS broker_phone,
-                "{_column_name("Property Type")}" AS property_type,
-                "{_column_name("Location")}" AS location,
-                "{_column_name("BHK")}" AS bhk,
-                "{_column_name("Buyer Budget")}" AS budget,
-                "{_column_name("Match Reason")}" AS match_reason,
-                CAST(COALESCE("{_column_name("Match Score")}", '0') AS REAL) AS match_score,
-                COALESCE("{_column_name("Matched At")}", '') AS matched_at
-            FROM "{matches_table}"
-            WHERE COALESCE("{_column_name("Seller Lead_ID")}", '') <> ''
+                source_match."{_column_name("Seller Lead_ID")}" AS lead_id,
+                source_match."{_column_name("Buyer Lead_ID")}" AS counterparty_lead_id,
+                source_match."{_column_name("Buyer Name")}" AS broker_name,
+                source_match."{_column_name("Buyer Phone")}" AS broker_phone,
+                source_match."{_column_name("Property Type")}" AS property_type,
+                source_match."{_column_name("Location")}" AS location,
+                source_match."{_column_name("BHK")}" AS bhk,
+                source_match."{_column_name("Buyer Budget")}" AS budget,
+                source_match."{_column_name("Match Reason")}" AS match_reason,
+                CAST(COALESCE(source_match."{_column_name("Match Score")}", '0') AS REAL) AS match_score,
+                COALESCE(source_match."{_column_name("Matched At")}", '') AS matched_at,
+                COALESCE(NULLIF(counterparty."{_column_name("Last Seen")}", ''), NULLIF(counterparty."{_column_name("Date")}", ''), '') AS counterparty_recency
+            FROM "{matches_table}" AS source_match
+            LEFT JOIN "{_table_name("Structured Data")}" AS counterparty
+                ON counterparty."{_column_name("Lead_ID")}" = source_match."{_column_name("Buyer Lead_ID")}"
+            WHERE COALESCE(source_match."{_column_name("Seller Lead_ID")}", '') <> ''
         ),
         ranked AS (
             SELECT
                 *,
                 COUNT(*) OVER (PARTITION BY lead_id) AS match_count,
-                ROW_NUMBER() OVER (PARTITION BY lead_id ORDER BY match_score DESC, matched_at DESC, broker_name ASC) AS rn
+                ROW_NUMBER() OVER (PARTITION BY lead_id ORDER BY counterparty_recency DESC, match_score DESC, matched_at DESC, broker_name ASC) AS rn
             FROM normalized
         )
         SELECT
@@ -324,6 +376,7 @@ def _load_match_summary_by_lead(client) -> dict[str, dict[str, Any]]:
             bhk,
             budget,
             match_reason,
+            counterparty_recency,
             match_count,
             rn
         FROM ranked
@@ -358,6 +411,7 @@ def _load_match_summary_by_lead(client) -> dict[str, dict[str, Any]]:
                 "broker_name": _safe_str(row["broker_name"]),
                 "broker_phone": _safe_str(row["broker_phone"]),
                 "match_reason": _safe_str(row["match_reason"]),
+                "counterparty_recency": _safe_str(row["counterparty_recency"]),
             }
         )
     return lead_map
@@ -399,6 +453,30 @@ def _match_detail_from_bucket(bucket: dict[str, Any]) -> dict[str, str]:
     return detail
 
 
+def _priority_rank_from_score(score: float, priority_qualified_score: float) -> int:
+    if score >= 80:
+        return 0
+    if score >= priority_qualified_score:
+        return 1
+    if score > 0:
+        return 2
+    return 3
+
+
+def _priority_label_from_score(score: float, priority_qualified_score: float) -> str:
+    return ("HIGH", "MEDIUM", "LOW", "UNRANKED")[_priority_rank_from_score(score, priority_qualified_score)]
+
+
+def _strength_label_from_score(score: float, priority_qualified_score: float) -> str:
+    if score >= 80:
+        return "Strong"
+    if score >= priority_qualified_score:
+        return "Moderate"
+    if score > 0:
+        return "Developing"
+    return "Pending"
+
+
 def _load_match_counts_for_leads(client, lead_ids: list[str]) -> dict[str, int]:
     normalized = [lead_id.strip() for lead_id in lead_ids if lead_id and lead_id.strip()]
     if not normalized:
@@ -432,50 +510,60 @@ def _load_match_counts_for_leads(client, lead_ids: list[str]) -> dict[str, int]:
     return {str(row["lead_id"]).strip(): int(row["match_count"] or 0) for row in rows if row["lead_id"]}
 
 
-def _load_match_detail_for_lead(client, lead_id: str) -> dict[str, str]:
-    normalized_lead_id = lead_id.strip()
-    if not normalized_lead_id:
-        return _empty_match_detail()
+def _load_match_detail_for_leads(client, lead_ids: list[str]) -> dict[str, dict[str, str]]:
+    normalized = [lead_id.strip() for lead_id in lead_ids if lead_id and lead_id.strip()]
+    if not normalized:
+        return {}
 
     if not hasattr(client, "_connect"):
-        return _match_detail_from_bucket(_load_match_summary_by_lead(client).get(normalized_lead_id, {}))
+        match_map = _load_match_summary_by_lead(client)
+        return {lead_id: _match_detail_from_bucket(match_map.get(lead_id, {})) for lead_id in normalized}
 
     matches_table = _table_name("Matches")
+    placeholders = ", ".join("?" for _ in normalized)
     sql = f'''
         WITH normalized AS (
             SELECT
-                "{_column_name("Buyer Lead_ID")}" AS lead_id,
-                "{_column_name("Seller Name")}" AS broker_name,
-                "{_column_name("Seller Phone")}" AS broker_phone,
-                "{_column_name("Property Type")}" AS property_type,
-                "{_column_name("Location")}" AS location,
-                "{_column_name("BHK")}" AS bhk,
-                "{_column_name("Seller Budget")}" AS budget,
-                "{_column_name("Match Reason")}" AS match_reason,
-                CAST(COALESCE("{_column_name("Match Score")}", '0') AS REAL) AS match_score,
-                COALESCE("{_column_name("Matched At")}", '') AS matched_at
-            FROM "{matches_table}"
-            WHERE "{_column_name("Buyer Lead_ID")}" = ?
+                source_match."{_column_name("Buyer Lead_ID")}" AS lead_id,
+                source_match."{_column_name("Seller Lead_ID")}" AS counterparty_lead_id,
+                source_match."{_column_name("Seller Name")}" AS broker_name,
+                source_match."{_column_name("Seller Phone")}" AS broker_phone,
+                source_match."{_column_name("Property Type")}" AS property_type,
+                source_match."{_column_name("Location")}" AS location,
+                source_match."{_column_name("BHK")}" AS bhk,
+                source_match."{_column_name("Seller Budget")}" AS budget,
+                source_match."{_column_name("Match Reason")}" AS match_reason,
+                CAST(COALESCE(source_match."{_column_name("Match Score")}", '0') AS REAL) AS match_score,
+                COALESCE(source_match."{_column_name("Matched At")}", '') AS matched_at,
+                COALESCE(NULLIF(counterparty."{_column_name("Last Seen")}", ''), NULLIF(counterparty."{_column_name("Date")}", ''), '') AS counterparty_recency
+            FROM "{matches_table}" AS source_match
+            LEFT JOIN "{_table_name("Structured Data")}" AS counterparty
+                ON counterparty."{_column_name("Lead_ID")}" = source_match."{_column_name("Seller Lead_ID")}"
+            WHERE source_match."{_column_name("Buyer Lead_ID")}" IN ({placeholders})
             UNION ALL
             SELECT
-                "{_column_name("Seller Lead_ID")}" AS lead_id,
-                "{_column_name("Buyer Name")}" AS broker_name,
-                "{_column_name("Buyer Phone")}" AS broker_phone,
-                "{_column_name("Property Type")}" AS property_type,
-                "{_column_name("Location")}" AS location,
-                "{_column_name("BHK")}" AS bhk,
-                "{_column_name("Buyer Budget")}" AS budget,
-                "{_column_name("Match Reason")}" AS match_reason,
-                CAST(COALESCE("{_column_name("Match Score")}", '0') AS REAL) AS match_score,
-                COALESCE("{_column_name("Matched At")}", '') AS matched_at
-            FROM "{matches_table}"
-            WHERE "{_column_name("Seller Lead_ID")}" = ?
+                source_match."{_column_name("Seller Lead_ID")}" AS lead_id,
+                source_match."{_column_name("Buyer Lead_ID")}" AS counterparty_lead_id,
+                source_match."{_column_name("Buyer Name")}" AS broker_name,
+                source_match."{_column_name("Buyer Phone")}" AS broker_phone,
+                source_match."{_column_name("Property Type")}" AS property_type,
+                source_match."{_column_name("Location")}" AS location,
+                source_match."{_column_name("BHK")}" AS bhk,
+                source_match."{_column_name("Buyer Budget")}" AS budget,
+                source_match."{_column_name("Match Reason")}" AS match_reason,
+                CAST(COALESCE(source_match."{_column_name("Match Score")}", '0') AS REAL) AS match_score,
+                COALESCE(source_match."{_column_name("Matched At")}", '') AS matched_at,
+                COALESCE(NULLIF(counterparty."{_column_name("Last Seen")}", ''), NULLIF(counterparty."{_column_name("Date")}", ''), '') AS counterparty_recency
+            FROM "{matches_table}" AS source_match
+            LEFT JOIN "{_table_name("Structured Data")}" AS counterparty
+                ON counterparty."{_column_name("Lead_ID")}" = source_match."{_column_name("Buyer Lead_ID")}"
+            WHERE source_match."{_column_name("Seller Lead_ID")}" IN ({placeholders})
         ),
         ranked AS (
             SELECT
                 *,
-                COUNT(*) OVER () AS match_count,
-                ROW_NUMBER() OVER (ORDER BY match_score DESC, matched_at DESC, broker_name ASC) AS rn
+                COUNT(*) OVER (PARTITION BY lead_id) AS match_count,
+                ROW_NUMBER() OVER (PARTITION BY lead_id ORDER BY counterparty_recency DESC, match_score DESC, matched_at DESC, broker_name ASC) AS rn
             FROM normalized
         )
         SELECT
@@ -488,39 +576,509 @@ def _load_match_detail_for_lead(client, lead_id: str) -> dict[str, str]:
             budget,
             match_reason,
             match_count,
-            rn
+            counterparty_recency
         FROM ranked
         WHERE rn <= 3
-        ORDER BY rn
+        ORDER BY lead_id, rn
     '''
     with client._connect() as connection:
-        rows = connection.execute(sql, [normalized_lead_id, normalized_lead_id]).fetchall()
+        rows = connection.execute(sql, [*normalized, *normalized]).fetchall()
 
-    bucket = {"match_count": 0, "slots": []}
+    grouped: dict[str, dict[str, Any]] = {}
     for row in rows:
+        lead_id = _safe_str(row["lead_id"])
+        if not lead_id:
+            continue
+        bucket = grouped.setdefault(lead_id, {"match_count": 0, "slots": []})
         try:
             bucket["match_count"] = int(row["match_count"] or 0)
         except Exception:
             bucket["match_count"] = 0
-        property_summary = " | ".join(
-            part
-            for part in [
-                _safe_str(row["property_type"]),
-                _safe_str(row["location"]),
-                f"{_safe_str(row['bhk'])} BHK" if _safe_str(row["bhk"]) else "",
-                f"Budget {_safe_str(row['budget'])}" if _safe_str(row["budget"]) else "",
-            ]
-            if part
-        )
         bucket["slots"].append(
             {
-                "property_summary": property_summary,
+                "property_summary": " | ".join(
+                    part
+                    for part in [
+                        _safe_str(row["property_type"]),
+                        _safe_str(row["location"]),
+                        f"{_safe_str(row['bhk'])} BHK" if _safe_str(row["bhk"]) else "",
+                        f"Budget {_safe_str(row['budget'])}" if _safe_str(row["budget"]) else "",
+                    ]
+                    if part
+                ),
                 "broker_name": _safe_str(row["broker_name"]),
                 "broker_phone": _safe_str(row["broker_phone"]),
                 "match_reason": _safe_str(row["match_reason"]),
             }
         )
-    return _match_detail_from_bucket(bucket)
+    return {lead_id: _match_detail_from_bucket(bucket) for lead_id, bucket in grouped.items()}
+
+
+def _load_match_detail_for_lead(client, lead_id: str) -> dict[str, str]:
+    normalized_lead_id = lead_id.strip()
+    if not normalized_lead_id:
+        return _empty_match_detail()
+    return _load_match_detail_for_leads(client, [normalized_lead_id]).get(normalized_lead_id, _empty_match_detail())
+
+
+def _glide_sql_base_components(now: datetime, filter_config: dict[str, float]) -> dict[str, str]:
+    structured_table = _table_name("Structured Data")
+    execution_table = _table_name("Glide Execution")
+    matches_table = _table_name("Matches")
+    last_interaction_at = f'COALESCE(latest_execution."{_column_name("Last Interaction At")}", \'\')'
+    last_seen_at = f'COALESCE(base_structured."{_column_name("Last Seen")}", \'\')'
+    lead_date = f'COALESCE(base_structured."{_column_name("Date")}", \'\')'
+    activity_source = (
+        f'COALESCE(NULLIF({last_interaction_at}, \'\'), '
+        f'NULLIF({last_seen_at}, \'\'), '
+        f'NULLIF({lead_date}, \'\'), \'\')'
+    )
+    activity_date = f"SUBSTR({activity_source}, 1, 10)"
+    priority_score = f'CAST(COALESCE(base_structured."{_column_name("Priority Score")}", \'0\') AS REAL)'
+    follow_up_pending = f'UPPER(COALESCE(latest_execution."{_column_name("Follow-up Pending")}", \'\')) = \'TRUE\''
+    activity_cutoff = (now.date() - timedelta(days=int(filter_config["activity_window_days"]))).isoformat()
+    recent_cutoff = (now.date() - timedelta(days=int(filter_config["recent_interaction_days"]))).isoformat()
+    priority_cutoff = float(filter_config["priority_qualified_score"])
+    return {
+        "structured_table": structured_table,
+        "execution_table": execution_table,
+        "matches_table": matches_table,
+        "activity_date": activity_date,
+        "activity_cutoff": activity_cutoff,
+        "recent_cutoff": recent_cutoff,
+        "priority_cutoff": str(priority_cutoff),
+        "priority_score": priority_score,
+        "follow_up_pending": follow_up_pending,
+        "today_rule": (
+            f"({activity_date} >= ? AND "
+            f"({follow_up_pending} OR {priority_score} >= ? OR {activity_date} >= ?))"
+        ),
+        "active_rule": f"({activity_date} >= ?)",
+        "recent_rule": f"({activity_date} >= ?)",
+        "priority_rule": f"({priority_score} >= ?)",
+        "priority_rank": (
+            f"CASE "
+            f"WHEN {priority_score} >= 80 THEN 0 "
+            f"WHEN {priority_score} >= ? THEN 1 "
+            f"WHEN {priority_score} > 0 THEN 2 "
+            f"ELSE 3 END"
+        ),
+    }
+
+
+def _compose_glide_item(
+    row: dict[str, object],
+    filter_config: dict[str, float],
+    match_detail: dict[str, str] | None = None,
+) -> dict[str, str]:
+    detail = dict(_empty_match_detail())
+    if match_detail:
+        detail.update(match_detail)
+
+    try:
+        priority_score = float(row.get("priority_score") or 0)
+    except Exception:
+        priority_score = 0.0
+    priority_cutoff = float(filter_config["priority_qualified_score"])
+    priority = _priority_label_from_score(priority_score, priority_cutoff)
+    match_count = _safe_str(row.get("match_count") or detail.get("match_count", "0")) or "0"
+
+    item = {
+        "lead_id": _safe_str(row.get("lead_id")),
+        "name": _safe_str(row.get("name")),
+        "phone": _safe_str(row.get("phone")),
+        "lead_type": _safe_str(row.get("lead_type")),
+        "entry_type": "Requirement" if _safe_str(row.get("lead_type")) == "Buyer" else "Property" if _safe_str(row.get("lead_type")) == "Seller" else "",
+        "area": _safe_str(row.get("area")),
+        "property_type": _safe_str(row.get("property_type")),
+        "bhk": _normalize_numeric(row.get("bhk")),
+        "budget": _budget_text_from_values(
+            {
+                "Budget_Min": row.get("budget_min"),
+                "Budget_Max": row.get("budget_max"),
+                "Budget Range": row.get("budget_range"),
+            }
+        ),
+        "transaction_type": _safe_str(row.get("transaction_type")),
+        "priority": priority,
+        "match_count": match_count,
+        "strength": _strength_label_from_score(priority_score, priority_cutoff),
+        "last_interaction_date": _normalize_date(row.get("last_interaction_at") or row.get("last_seen_at") or row.get("lead_date_raw")),
+        "best_match_summary": detail.get("best_match_summary", ""),
+        "match_reason": detail.get("match_reason", ""),
+        "lead_date": _normalize_date(row.get("last_seen_at") or row.get("lead_date_raw")),
+        "cleaned_message": _safe_str(row.get("cleaned_message")),
+        "raw_message": _safe_str(row.get("raw_message")),
+        "status": _safe_str(row.get("status")),
+        "notes": _safe_str(row.get("notes")),
+        "next_follow_up": _safe_str(row.get("next_follow_up")),
+        "next_action": _safe_str(row.get("next_action")),
+        "timing": _safe_str(row.get("timing")),
+        "calc_active_within_120_days": _normalize_bool(_safe_str(row.get("calc_active_within_120_days")).upper() == "TRUE"),
+        "calc_follow_up_pending": _normalize_bool(_safe_str(row.get("calc_follow_up_pending")).upper() == "TRUE"),
+        "calc_priority_qualified": _normalize_bool(_safe_str(row.get("calc_priority_qualified")).upper() == "TRUE"),
+        "calc_recent_interaction": _normalize_bool(_safe_str(row.get("calc_recent_interaction")).upper() == "TRUE"),
+        "calc_in_today_view": _normalize_bool(_safe_str(row.get("calc_in_today_view")).upper() == "TRUE"),
+        "last_seen_at": _safe_str(row.get("last_seen_at")),
+        "updated_at": _safe_str(row.get("updated_at")) or _safe_str(row.get("last_seen_at")),
+        "match_1_property_summary": detail.get("match_1_property_summary", ""),
+        "match_1_broker_name": detail.get("match_1_broker_name", ""),
+        "match_1_broker_phone": detail.get("match_1_broker_phone", ""),
+        "match_2_property_summary": detail.get("match_2_property_summary", ""),
+        "match_2_broker_name": detail.get("match_2_broker_name", ""),
+        "match_2_broker_phone": detail.get("match_2_broker_phone", ""),
+        "match_3_property_summary": detail.get("match_3_property_summary", ""),
+        "match_3_broker_name": detail.get("match_3_broker_name", ""),
+        "match_3_broker_phone": detail.get("match_3_broker_phone", ""),
+    }
+    return item
+
+
+def _fetch_glide_base_rows_sql(
+    client,
+    *,
+    mode: str,
+    search: str,
+    lead_type: str,
+    property_type: str,
+    from_date: date | None,
+    to_date: date | None,
+    limit: int,
+    offset: int,
+    now: datetime,
+) -> dict[str, Any]:
+    filter_config = get_glide_filter_config(client)
+    parts = _glide_sql_base_components(now, filter_config)
+    normalized_lead_type = _safe_str(lead_type).capitalize()
+    normalized_property_type = _safe_str(property_type).lower()
+    term = _safe_str(search).lower()
+    like_term = f"%{term}%"
+
+    where_parts = [
+        f'COALESCE(base_structured."{_column_name("Lead_ID")}", \'\') <> \'\'',
+        f'COALESCE(base_structured."{_column_name("Type")}", \'\') IN (\'Buyer\', \'Seller\')',
+    ]
+    params: list[object] = []
+
+    if mode == "today":
+        where_parts.append(parts["today_rule"])
+        params.extend([parts["activity_cutoff"], float(parts["priority_cutoff"]), parts["recent_cutoff"]])
+    if normalized_lead_type:
+        where_parts.append(f'COALESCE(base_structured."{_column_name("Type")}", \'\') = ?')
+        params.append(normalized_lead_type)
+    if normalized_property_type:
+        where_parts.append(f'LOWER(COALESCE(base_structured."{_column_name("Property Type")}", \'\')) LIKE ?')
+        params.append(f"%{normalized_property_type}%")
+    if from_date:
+        where_parts.append(f'{parts["activity_date"]} >= ?')
+        params.append(from_date.isoformat())
+    if to_date:
+        where_parts.append(f'{parts["activity_date"]} <= ?')
+        params.append(to_date.isoformat())
+    if term:
+        search_columns = [
+            f'LOWER(COALESCE(base_structured."{_column_name("Name")}", \'\')) LIKE ?',
+            f'LOWER(COALESCE(base_structured."{_column_name("Contact Number")}", \'\')) LIKE ?',
+            f'LOWER(COALESCE(base_structured."{_column_name("Type")}", \'\')) LIKE ?',
+            f'LOWER(COALESCE(base_structured."{_column_name("Location")}", \'\')) LIKE ?',
+            f'LOWER(COALESCE(base_structured."{_column_name("Property Type")}", \'\')) LIKE ?',
+            f'LOWER(COALESCE(base_structured."{_column_name("Transaction Type")}", \'\')) LIKE ?',
+            f'''EXISTS (
+                SELECT 1
+                FROM "{parts["matches_table"]}" AS match_search
+                WHERE (
+                    match_search."{_column_name("Buyer Lead_ID")}" = base_structured."{_column_name("Lead_ID")}"
+                    AND LOWER(COALESCE(match_search."{_column_name("Seller Name")}", \'\')) LIKE ?
+                ) OR (
+                    match_search."{_column_name("Seller Lead_ID")}" = base_structured."{_column_name("Lead_ID")}"
+                    AND LOWER(COALESCE(match_search."{_column_name("Buyer Name")}", \'\')) LIKE ?
+                )
+            )''',
+        ]
+        where_parts.append("(" + " OR ".join(search_columns) + ")")
+        params.extend([like_term] * 8)
+
+    where_sql = " AND ".join(where_parts)
+    latest_execution_cte = f'''
+        latest_execution AS (
+            SELECT *
+            FROM (
+                SELECT
+                    "{_column_name("Lead_ID")}" AS lead_id,
+                    "{_column_name("Status")}" AS status,
+                    "{_column_name("Notes")}" AS notes,
+                    "{_column_name("Next Follow-up")}" AS next_follow_up,
+                    "{_column_name("Next Action")}" AS next_action,
+                    "{_column_name("Timing")}" AS timing,
+                    "{_column_name("Last Interaction At")}" AS last_interaction_at,
+                    "{_column_name("Follow-up Pending")}" AS follow_up_pending,
+                    "{_column_name("Updated At")}" AS updated_at,
+                    ROW_NUMBER() OVER (PARTITION BY "{_column_name("Lead_ID")}" ORDER BY row_id DESC) AS rn
+                FROM "{parts["execution_table"]}"
+                WHERE COALESCE("{_column_name("Lead_ID")}", '') <> ''
+            ) ranked_execution
+            WHERE rn = 1
+        )
+    '''
+    match_counts_cte = f'''
+        match_counts AS (
+            SELECT lead_id, SUM(match_count) AS match_count
+            FROM (
+                SELECT "{_column_name("Buyer Lead_ID")}" AS lead_id, COUNT(*) AS match_count
+                FROM "{parts["matches_table"]}"
+                WHERE COALESCE("{_column_name("Buyer Lead_ID")}", '') <> ''
+                GROUP BY "{_column_name("Buyer Lead_ID")}"
+                UNION ALL
+                SELECT "{_column_name("Seller Lead_ID")}" AS lead_id, COUNT(*) AS match_count
+                FROM "{parts["matches_table"]}"
+                WHERE COALESCE("{_column_name("Seller Lead_ID")}", '') <> ''
+                GROUP BY "{_column_name("Seller Lead_ID")}"
+            ) aggregated_matches
+            GROUP BY lead_id
+        )
+    '''
+    base_cte = f'''
+        base_rows AS (
+            SELECT
+                base_structured."{_column_name("Lead_ID")}" AS lead_id,
+                base_structured."{_column_name("Name")}" AS name,
+                base_structured."{_column_name("Contact Number")}" AS phone,
+                base_structured."{_column_name("Type")}" AS lead_type,
+                base_structured."{_column_name("Location")}" AS area,
+                base_structured."{_column_name("Property Type")}" AS property_type,
+                base_structured."{_column_name("BHK")}" AS bhk,
+                base_structured."{_column_name("Budget_Min")}" AS budget_min,
+                base_structured."{_column_name("Budget_Max")}" AS budget_max,
+                base_structured."{_column_name("Budget Range")}" AS budget_range,
+                base_structured."{_column_name("Transaction Type")}" AS transaction_type,
+                {parts["priority_score"]} AS priority_score,
+                COALESCE(match_counts.match_count, 0) AS match_count,
+                base_structured."{_column_name("Date")}" AS lead_date_raw,
+                base_structured."{_column_name("Last Seen")}" AS last_seen_at,
+                base_structured."{_column_name("Cleaned Message")}" AS cleaned_message,
+                base_structured."{_column_name("Raw Message")}" AS raw_message,
+                COALESCE(latest_execution.status, '') AS status,
+                COALESCE(latest_execution.notes, '') AS notes,
+                COALESCE(latest_execution.next_follow_up, '') AS next_follow_up,
+                COALESCE(latest_execution.next_action, '') AS next_action,
+                COALESCE(latest_execution.timing, '') AS timing,
+                COALESCE(latest_execution.last_interaction_at, '') AS last_interaction_at,
+                COALESCE(latest_execution.follow_up_pending, '') AS calc_follow_up_pending,
+                COALESCE(latest_execution.updated_at, '') AS updated_at,
+                CASE WHEN {parts["active_rule"]} THEN 'TRUE' ELSE 'FALSE' END AS calc_active_within_120_days,
+                CASE WHEN {parts["recent_rule"]} THEN 'TRUE' ELSE 'FALSE' END AS calc_recent_interaction,
+                CASE WHEN {parts["priority_rule"]} THEN 'TRUE' ELSE 'FALSE' END AS calc_priority_qualified,
+                CASE WHEN {parts["today_rule"]} THEN 'TRUE' ELSE 'FALSE' END AS calc_in_today_view,
+                {parts["priority_rank"]} AS priority_rank
+            FROM "{parts["structured_table"]}" AS base_structured
+            LEFT JOIN latest_execution ON latest_execution.lead_id = base_structured."{_column_name("Lead_ID")}"
+            LEFT JOIN match_counts ON match_counts.lead_id = base_structured."{_column_name("Lead_ID")}"
+            WHERE {where_sql}
+        )
+    '''
+    ctes = ",\n".join([latest_execution_cte, match_counts_cte, base_cte])
+    base_params = [
+        parts["activity_cutoff"],
+        parts["recent_cutoff"],
+        float(parts["priority_cutoff"]),
+        parts["activity_cutoff"],
+        float(parts["priority_cutoff"]),
+        parts["recent_cutoff"],
+        float(parts["priority_cutoff"]),
+        *params,
+    ]
+
+    count_sql = f"WITH {ctes} SELECT COUNT(*) AS row_count FROM base_rows"
+    page_sql = f'''
+        WITH {ctes}
+        SELECT *
+        FROM base_rows
+        ORDER BY COALESCE(NULLIF(last_seen_at, ''), NULLIF(lead_date_raw, ''), '') DESC, match_count DESC, priority_rank ASC, LOWER(name) ASC, lead_id DESC
+        LIMIT ? OFFSET ?
+    '''
+
+    with client._connect() as connection:
+        total = int(connection.execute(count_sql, base_params).fetchone()["row_count"] or 0)
+        rows = connection.execute(page_sql, [*base_params, limit, offset]).fetchall()
+
+    row_columns = [
+        "lead_id",
+        "name",
+        "phone",
+        "lead_type",
+        "area",
+        "property_type",
+        "bhk",
+        "budget_min",
+        "budget_max",
+        "budget_range",
+        "transaction_type",
+        "priority_score",
+        "match_count",
+        "lead_date_raw",
+        "last_seen_at",
+        "cleaned_message",
+        "raw_message",
+        "status",
+        "notes",
+        "next_follow_up",
+        "next_action",
+        "timing",
+        "last_interaction_at",
+        "calc_follow_up_pending",
+        "updated_at",
+        "calc_active_within_120_days",
+        "calc_recent_interaction",
+        "calc_priority_qualified",
+        "calc_in_today_view",
+        "priority_rank",
+    ]
+    row_payloads = [{column: row[column] for column in row_columns} for row in rows]
+    match_details = _load_match_detail_for_leads(client, [row["lead_id"] for row in row_payloads])
+    items = [
+        _compose_glide_item(row, filter_config, match_details.get(_safe_str(row.get("lead_id")), {}))
+        for row in row_payloads
+    ]
+    return {
+        "mode": mode,
+        "columns": list(GLIDE_VIEW_COLUMNS),
+        "rows": items,
+        "row_count": total,
+        "page_size": limit,
+        "offset": offset,
+        "search": term,
+        "lead_type": normalized_lead_type,
+        "property_type": normalized_property_type,
+    }
+
+
+def _load_glide_lead_detail_sql(client, lead_id: str, *, now: datetime) -> dict[str, str] | None:
+    normalized_lead_id = _safe_str(lead_id)
+    if not normalized_lead_id:
+        return None
+
+    filter_config = get_glide_filter_config(client)
+    parts = _glide_sql_base_components(now, filter_config)
+    sql = f'''
+        WITH
+        latest_execution AS (
+            SELECT *
+            FROM (
+                SELECT
+                    "{_column_name("Lead_ID")}" AS lead_id,
+                    "{_column_name("Status")}" AS status,
+                    "{_column_name("Notes")}" AS notes,
+                    "{_column_name("Next Follow-up")}" AS next_follow_up,
+                    "{_column_name("Next Action")}" AS next_action,
+                    "{_column_name("Timing")}" AS timing,
+                    "{_column_name("Last Interaction At")}" AS last_interaction_at,
+                    "{_column_name("Follow-up Pending")}" AS follow_up_pending,
+                    "{_column_name("Updated At")}" AS updated_at,
+                    ROW_NUMBER() OVER (PARTITION BY "{_column_name("Lead_ID")}" ORDER BY row_id DESC) AS rn
+                FROM "{parts["execution_table"]}"
+                WHERE COALESCE("{_column_name("Lead_ID")}", '') <> ''
+            ) ranked_execution
+            WHERE rn = 1
+        ),
+        match_counts AS (
+            SELECT lead_id, SUM(match_count) AS match_count
+            FROM (
+                SELECT "{_column_name("Buyer Lead_ID")}" AS lead_id, COUNT(*) AS match_count
+                FROM "{parts["matches_table"]}"
+                WHERE "{_column_name("Buyer Lead_ID")}" = ?
+                GROUP BY "{_column_name("Buyer Lead_ID")}"
+                UNION ALL
+                SELECT "{_column_name("Seller Lead_ID")}" AS lead_id, COUNT(*) AS match_count
+                FROM "{parts["matches_table"]}"
+                WHERE "{_column_name("Seller Lead_ID")}" = ?
+                GROUP BY "{_column_name("Seller Lead_ID")}"
+            ) aggregated_matches
+            GROUP BY lead_id
+        )
+        SELECT
+            base_structured."{_column_name("Lead_ID")}" AS lead_id,
+            base_structured."{_column_name("Name")}" AS name,
+            base_structured."{_column_name("Contact Number")}" AS phone,
+            base_structured."{_column_name("Type")}" AS lead_type,
+            base_structured."{_column_name("Location")}" AS area,
+            base_structured."{_column_name("Property Type")}" AS property_type,
+            base_structured."{_column_name("BHK")}" AS bhk,
+            base_structured."{_column_name("Budget_Min")}" AS budget_min,
+            base_structured."{_column_name("Budget_Max")}" AS budget_max,
+            base_structured."{_column_name("Budget Range")}" AS budget_range,
+            base_structured."{_column_name("Transaction Type")}" AS transaction_type,
+            {parts["priority_score"]} AS priority_score,
+            COALESCE(match_counts.match_count, 0) AS match_count,
+            base_structured."{_column_name("Date")}" AS lead_date_raw,
+            base_structured."{_column_name("Last Seen")}" AS last_seen_at,
+            base_structured."{_column_name("Cleaned Message")}" AS cleaned_message,
+            base_structured."{_column_name("Raw Message")}" AS raw_message,
+            COALESCE(latest_execution.status, '') AS status,
+            COALESCE(latest_execution.notes, '') AS notes,
+            COALESCE(latest_execution.next_follow_up, '') AS next_follow_up,
+            COALESCE(latest_execution.next_action, '') AS next_action,
+            COALESCE(latest_execution.timing, '') AS timing,
+            COALESCE(latest_execution.last_interaction_at, '') AS last_interaction_at,
+            COALESCE(latest_execution.follow_up_pending, '') AS calc_follow_up_pending,
+            COALESCE(latest_execution.updated_at, '') AS updated_at,
+            CASE WHEN {parts["active_rule"]} THEN 'TRUE' ELSE 'FALSE' END AS calc_active_within_120_days,
+            CASE WHEN {parts["recent_rule"]} THEN 'TRUE' ELSE 'FALSE' END AS calc_recent_interaction,
+            CASE WHEN {parts["priority_rule"]} THEN 'TRUE' ELSE 'FALSE' END AS calc_priority_qualified,
+            CASE WHEN {parts["today_rule"]} THEN 'TRUE' ELSE 'FALSE' END AS calc_in_today_view
+        FROM "{parts["structured_table"]}" AS base_structured
+        LEFT JOIN latest_execution ON latest_execution.lead_id = base_structured."{_column_name("Lead_ID")}"
+        LEFT JOIN match_counts ON match_counts.lead_id = base_structured."{_column_name("Lead_ID")}"
+        WHERE base_structured."{_column_name("Lead_ID")}" = ?
+        LIMIT 1
+    '''
+    params = [
+        normalized_lead_id,
+        normalized_lead_id,
+        parts["activity_cutoff"],
+        parts["recent_cutoff"],
+        float(parts["priority_cutoff"]),
+        parts["activity_cutoff"],
+        float(parts["priority_cutoff"]),
+        parts["recent_cutoff"],
+        normalized_lead_id,
+    ]
+    with client._connect() as connection:
+        row = connection.execute(sql, params).fetchone()
+    if row is None:
+        return None
+    payload_columns = [
+        "lead_id",
+        "name",
+        "phone",
+        "lead_type",
+        "area",
+        "property_type",
+        "bhk",
+        "budget_min",
+        "budget_max",
+        "budget_range",
+        "transaction_type",
+        "priority_score",
+        "match_count",
+        "lead_date_raw",
+        "last_seen_at",
+        "cleaned_message",
+        "raw_message",
+        "status",
+        "notes",
+        "next_follow_up",
+        "next_action",
+        "timing",
+        "last_interaction_at",
+        "calc_follow_up_pending",
+        "updated_at",
+        "calc_active_within_120_days",
+        "calc_recent_interaction",
+        "calc_priority_qualified",
+        "calc_in_today_view",
+    ]
+    payload = {column: row[column] for column in payload_columns}
+    return _compose_glide_item(payload, filter_config, _load_match_detail_for_lead(client, normalized_lead_id))
 
 
 def _cached_glide_rows(client, *, now: datetime | None = None, force_refresh: bool = False) -> list[dict[str, str]]:
@@ -606,6 +1164,7 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
                 "lead_type": lead_type,
                 "entry_type": "Requirement" if lead_type == "Buyer" else "Property" if lead_type == "Seller" else "",
                 "area": _safe_str(lead.values.get("Location")),
+                "property_type": _safe_str(lead.values.get("Property Type")),
                 "bhk": _normalize_numeric(lead.values.get("BHK")),
                 "budget": _budget_text(lead),
                 "transaction_type": _safe_str(lead.values.get("Transaction Type")),
@@ -643,13 +1202,7 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
             item["calc_in_today_view"] = _normalize_bool(_lead_in_today_view(item, now, filter_config))
             items.append(item)
 
-        items.sort(
-            key=lambda entry: (
-                -float(entry.get("match_count") or 0),
-                entry.get("priority", ""),
-                entry.get("name", "").lower(),
-            )
-        )
+        items.sort(key=_lead_sort_key)
         return items
 
     items: list[dict[str, str]] = []
@@ -676,6 +1229,7 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
             "lead_type": lead_type,
             "entry_type": "Requirement" if lead_type == "Buyer" else "Property" if lead_type == "Seller" else "",
             "area": _safe_str(lead_values.get("Location")),
+            "property_type": _safe_str(lead_values.get("Property Type")),
             "bhk": _normalize_numeric(lead_values.get("BHK")),
             "budget": _budget_text_from_values(lead_values),
             "transaction_type": _safe_str(lead_values.get("Transaction Type")),
@@ -705,13 +1259,7 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
         item["calc_in_today_view"] = _normalize_bool(_lead_in_today_view(item, now, filter_config))
         items.append(item)
 
-    items.sort(
-        key=lambda entry: (
-            -float(entry.get("match_count") or 0),
-            {"HIGH": 0, "MEDIUM": 1, "LOW": 2, "UNRANKED": 3}.get(entry.get("priority", ""), 4),
-            entry.get("name", "").lower(),
-        )
-    )
+    items.sort(key=_lead_sort_key)
     return items
 
 
@@ -723,13 +1271,7 @@ def _enrich_rows_with_match_counts(client, rows: list[dict[str, str]]) -> list[d
         next_row = dict(row)
         next_row["match_count"] = str(counts.get(row.get("lead_id", ""), 0))
         enriched.append(next_row)
-    enriched.sort(
-        key=lambda entry: (
-            -float(entry.get("match_count") or 0),
-            entry.get("priority", ""),
-            entry.get("name", "").lower(),
-        )
-    )
+    enriched.sort(key=_lead_sort_key)
     return enriched
 
 
@@ -751,6 +1293,23 @@ def get_glide_view_dataset(
     normalized_lead_type = _safe_str(lead_type).capitalize()
     if normalized_lead_type and normalized_lead_type not in {"Buyer", "Seller"}:
         raise ValueError("lead_type must be 'Buyer', 'Seller', or empty")
+    now = now or datetime.now()
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+
+    if hasattr(client, "_connect"):
+        return _fetch_glide_base_rows_sql(
+            client,
+            mode=mode,
+            search=search,
+            lead_type=normalized_lead_type,
+            property_type=property_type,
+            from_date=from_date,
+            to_date=to_date,
+            limit=limit,
+            offset=offset,
+            now=now,
+        )
 
     items = _cached_glide_rows(client, now=now)
     if mode == "today":
@@ -786,8 +1345,6 @@ def get_glide_view_dataset(
         items = [item for item in items if term in _search_blob(item)]
 
     total = len(items)
-    limit = max(1, min(limit, 200))
-    offset = max(0, offset)
     page = items[offset: offset + limit]
     return {
         "mode": mode,
@@ -803,13 +1360,11 @@ def get_glide_view_dataset(
 
 
 def get_glide_lead_detail(client, lead_id: str, *, now: datetime | None = None) -> dict[str, str] | None:
+    if hasattr(client, "_connect"):
+        return _load_glide_lead_detail_sql(client, lead_id, now=now or datetime.now())
     for item in _cached_glide_rows(client, now=now):
         if item["lead_id"] == lead_id:
-            if not hasattr(client, "_connect"):
-                return item
-            detail = dict(item)
-            detail.update(_load_match_detail_for_lead(client, lead_id))
-            return detail
+            return item
     return None
 
 

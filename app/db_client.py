@@ -346,13 +346,24 @@ class DatabaseClient:
         )
 
     def _ensure_indexes(self, connection: sqlite3.Connection) -> None:
+        structured_table = _table_name("Structured Data")
+        for name, column in (
+            ("date", "Date"),
+            ("lead_id", "Lead_ID"),
+            ("type", "Type"),
+            ("location", "Location"),
+            ("property_type", "Property Type"),
+            ("name", "Name"),
+            ("phone", "Contact Number"),
+            ("last_seen", "Last Seen"),
+        ):
+            connection.execute(
+                f'CREATE INDEX IF NOT EXISTS "idx_{structured_table}_{name}" '
+                f'ON "{structured_table}" ("{_column_name(column)}")'
+            )
         connection.execute(
-            f'CREATE INDEX IF NOT EXISTS "idx_{_table_name("Structured Data")}_date" '
-            f'ON "{_table_name("Structured Data")}" ("{_column_name("Date")}")'
-        )
-        connection.execute(
-            f'CREATE INDEX IF NOT EXISTS "idx_{_table_name("Structured Data")}_lead_id" '
-            f'ON "{_table_name("Structured Data")}" ("{_column_name("Lead_ID")}")'
+            f'CREATE INDEX IF NOT EXISTS "idx_{structured_table}_type_last_seen" '
+            f'ON "{structured_table}" ("{_column_name("Type")}", "{_column_name("Last Seen")}")'
         )
         processed_messages_index = f'idx_{_table_name("Processed Messages")}_fingerprint'
         processed_messages_table = _table_name("Processed Messages")
@@ -923,11 +934,11 @@ class DatabaseClient:
         property_type: str = "",
         broker: str = "",
         phone: str = "",
-        limit: int = 50,
+        limit: int = 0,
         offset: int = 0,
     ) -> dict[str, Any]:
         self.ensure_structure()
-        limit = max(1, min(limit, 50))
+        limit = 0 if int(limit or 0) <= 0 else max(1, min(int(limit), 5000))
         offset = max(0, offset)
 
         if not hasattr(self, "_connect"):
@@ -950,8 +961,16 @@ class DatabaseClient:
                     return False
                 if filters["location"] and filters["location"] not in row.get("Location", "").strip().lower():
                     return False
-                if filters["property_type"] and filters["property_type"] not in row.get("Property_Type", "").strip().lower():
-                    return False
+                if filters["property_type"]:
+                    property_blob = " ".join(
+                        [
+                            row.get("Property_Type", ""),
+                            row.get("BHK", ""),
+                            row.get("Budget", ""),
+                        ]
+                    ).strip().lower()
+                    if filters["property_type"] not in property_blob:
+                        return False
                 if filters["broker"] and filters["broker"] not in row.get("Broker", "").strip().lower():
                     return False
                 if filters["phone"] and filters["phone"] not in row.get("Phone", "").strip().lower():
@@ -959,18 +978,26 @@ class DatabaseClient:
                 if normalized_query:
                     blob = " ".join(
                         row.get(field, "")
-                        for field in ("Name", "Phone", "Location", "Property_Type", "Broker", "Society", "Landmark")
+                        for field in ("Name", "Phone", "Location", "Property_Type", "BHK", "Budget", "Broker", "Society", "Landmark")
                     ).lower()
                     if normalized_query not in blob:
                         return False
                 return True
 
             filtered = [row for row in rows if matches(row)]
+            filtered.sort(
+                key=lambda row: (
+                    str(row.get("Last_Seen", "") or ""),
+                    str(row.get("Lead_ID", "") or ""),
+                ),
+                reverse=True,
+            )
+            page_rows = filtered[offset:] if limit == 0 else filtered[offset: offset + limit]
             return {
                 "columns": list(REFERENCE_DATA_COLUMNS),
-                "rows": filtered[offset: offset + limit],
+                "rows": page_rows,
                 "row_count": len(filtered),
-                "page_size": limit,
+                "page_size": len(page_rows) if limit == 0 else limit,
                 "offset": offset,
             }
 
@@ -995,13 +1022,27 @@ class DatabaseClient:
         add_exact("Entry_Type", entry_type)
         add_exact("Lead_Type", lead_type)
         add_contains("Location", location)
-        add_contains("Property_Type", property_type)
+        raw_property_type = property_type.strip()
+        if raw_property_type:
+            where_parts.append(
+                "("
+                + " OR ".join(
+                    [
+                        f'LOWER(COALESCE("{_column_name("Property_Type")}", \'\')) LIKE ?',
+                        f'LOWER(COALESCE("{_column_name("BHK")}", \'\')) LIKE ?',
+                        f'LOWER(COALESCE("{_column_name("Budget")}", \'\')) LIKE ?',
+                    ]
+                )
+                + ")"
+            )
+            like_property = f"%{raw_property_type.lower()}%"
+            params.extend([like_property, like_property, like_property])
         add_contains("Broker", broker)
         add_contains("Phone", phone)
 
         normalized_query = query.strip().lower()
         if normalized_query:
-            search_columns = ["Name", "Phone", "Location", "Property_Type", "Broker", "Society", "Landmark"]
+            search_columns = ["Name", "Phone", "Location", "Property_Type", "BHK", "Budget", "Broker", "Society", "Landmark"]
             where_parts.append(
                 "(" + " OR ".join(
                     f'LOWER(COALESCE("{_column_name(column)}", \'\')) LIKE ?'
@@ -1020,22 +1061,33 @@ class DatabaseClient:
                 f'SELECT COUNT(*) AS row_count FROM "{table_name}" {where_sql}',
                 params,
             ).fetchone()["row_count"]
-            rows = connection.execute(
-                f'''
-                SELECT {select_columns}
-                FROM "{table_name}"
-                {where_sql}
-                ORDER BY COALESCE("{_column_name("Last_Seen")}", '') DESC, COALESCE("{_column_name("Lead_ID")}", '') DESC
-                LIMIT ? OFFSET ?
-                ''',
-                [*params, limit, offset],
-            ).fetchall()
+            if limit == 0:
+                rows = connection.execute(
+                    f'''
+                    SELECT {select_columns}
+                    FROM "{table_name}"
+                    {where_sql}
+                    ORDER BY COALESCE("{_column_name("Last_Seen")}", '') DESC, COALESCE("{_column_name("Lead_ID")}", '') DESC
+                    ''',
+                    params,
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    f'''
+                    SELECT {select_columns}
+                    FROM "{table_name}"
+                    {where_sql}
+                    ORDER BY COALESCE("{_column_name("Last_Seen")}", '') DESC, COALESCE("{_column_name("Lead_ID")}", '') DESC
+                    LIMIT ? OFFSET ?
+                    ''',
+                    [*params, limit, offset],
+                ).fetchall()
 
         return {
             "columns": list(REFERENCE_DATA_COLUMNS),
             "rows": [{column: ("" if row[column] is None else str(row[column])) for column in REFERENCE_DATA_COLUMNS} for row in rows],
             "row_count": int(total),
-            "page_size": limit,
+            "page_size": len(rows) if limit == 0 else limit,
             "offset": offset,
         }
 

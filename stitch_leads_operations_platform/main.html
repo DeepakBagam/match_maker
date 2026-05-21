@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta content="width=device-width, initial-scale=1.0" name="viewport" />
   <title>Leads Mobile</title>
+  <link href="/static/icons/mobile-app-icon.svg" rel="icon" type="image/svg+xml" />
+  <link href="/static/icons/mobile-app-icon.svg" rel="apple-touch-icon" />
+  <link href="/static/manifest.webmanifest" rel="manifest" />
+  <meta content="#D9907A" name="theme-color" />
   <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
   <script>
@@ -48,13 +52,16 @@
     <header class="sticky top-0 z-20 border-b border-line bg-white/90 px-4 pb-4 pt-5 backdrop-blur">
       <div class="flex items-start justify-between gap-4">
         <div>
-          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Separate Mobile App</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.24em] text-primary">Lead Vault</p>
           <h1 class="font-display text-3xl text-ink">Leads</h1>
           <p class="mt-1 text-sm text-soft">Queue, search, deals, and alerts on one mobile-first screen.</p>
         </div>
-        <button class="rounded-full border border-line bg-white p-2 text-soft" id="refreshAllBtn" type="button">
-          <span class="material-symbols-outlined">refresh</span>
-        </button>
+        <div class="flex items-center gap-2">
+          <a class="rounded-full border border-line bg-white px-3 py-2 text-xs font-semibold text-soft" href="/logout">Logout</a>
+          <button class="rounded-full border border-line bg-white p-2 text-soft" id="refreshAllBtn" type="button">
+            <span class="material-symbols-outlined">refresh</span>
+          </button>
+        </div>
       </div>
 
       <div class="mt-4 grid grid-cols-4 gap-2 rounded-2xl bg-blush p-1">
@@ -131,8 +138,8 @@
                 <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="searchLocation" placeholder="Wakad" type="text" />
               </div>
               <div>
-                <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="searchPropertyType">Property</label>
-                <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="searchPropertyType" placeholder="2 BHK" type="text" />
+                <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="searchPropertyType">Property / BHK</label>
+                <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="searchPropertyType" placeholder="Flat or 2 BHK" type="text" />
               </div>
             </div>
           </div>
@@ -202,6 +209,7 @@
       queueRows: [],
       queuePage: 1,
       queuePageSize: 10,
+      queueTotal: 0,
       queueSearchHandle: null,
     };
 
@@ -257,23 +265,15 @@
       });
     }
 
-    function queuePagePayload() {
-      const totalPages = Math.max(1, Math.ceil(state.queueRows.length / state.queuePageSize));
-      state.queuePage = Math.min(Math.max(state.queuePage, 1), totalPages);
-      const start = (state.queuePage - 1) * state.queuePageSize;
-      return {
-        totalPages,
-        start,
-        rows: state.queueRows.slice(start, start + state.queuePageSize),
-      };
-    }
-
     function renderQueue() {
       const list = document.getElementById("queueList");
-      const { rows, totalPages, start } = queuePagePayload();
-      document.getElementById("queueMeta").textContent = `${state.queueRows.length} leads`;
-      document.getElementById("queuePageMeta").textContent = state.queueRows.length
-        ? `Showing ${start + 1}-${Math.min(start + state.queuePageSize, state.queueRows.length)} of ${state.queueRows.length} | Page ${state.queuePage}/${totalPages}`
+      const totalPages = Math.max(1, Math.ceil(state.queueTotal / state.queuePageSize));
+      state.queuePage = Math.min(Math.max(state.queuePage, 1), totalPages);
+      const start = state.queueTotal ? ((state.queuePage - 1) * state.queuePageSize) : 0;
+      const rows = state.queueRows;
+      document.getElementById("queueMeta").textContent = `${state.queueTotal} leads`;
+      document.getElementById("queuePageMeta").textContent = state.queueTotal
+        ? `Showing ${start + 1}-${Math.min(start + rows.length, state.queueTotal)} of ${state.queueTotal} | Page ${state.queuePage}/${totalPages}`
         : "No leads";
       document.getElementById("prevQueueBtn").disabled = state.queuePage <= 1;
       document.getElementById("nextQueueBtn").disabled = state.queuePage >= totalPages;
@@ -288,7 +288,7 @@
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <p class="truncate font-display text-2xl text-ink">${escapeHtml(row.name || "Unnamed Lead")}</p>
-              <p class="mt-1 text-sm text-soft">${escapeHtml(row.area || "No location")}${row.bhk ? ` | ${escapeHtml(row.bhk)} BHK` : ""}${row.transaction_type ? ` | ${escapeHtml(row.transaction_type)}` : ""}</p>
+              <p class="mt-1 text-sm text-soft">${escapeHtml(row.area || "No location")}${row.property_type ? ` | ${escapeHtml(row.property_type)}` : ""}${row.bhk ? ` | ${escapeHtml(row.bhk)} BHK` : ""}${row.transaction_type ? ` | ${escapeHtml(row.transaction_type)}` : ""}</p>
               <p class="mt-1 text-sm text-soft">${escapeHtml(row.budget || "No budget")}${row.phone ? ` | ${escapeHtml(row.phone)}` : ""}</p>
             </div>
             <span class="${row.lead_type === "Buyer" ? "bg-emerald-50 text-emerald-700" : "bg-warm text-primary"} rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">${escapeHtml(row.lead_type || "Lead")}</span>
@@ -309,7 +309,8 @@
       setStatus("Loading queue.");
       const query = new URLSearchParams();
       query.set("mode", "all");
-      query.set("limit", "200");
+      query.set("limit", String(state.queuePageSize));
+      query.set("offset", String(Math.max(0, (state.queuePage - 1) * state.queuePageSize)));
       if (state.leadType) {
         query.set("lead_type", state.leadType);
       }
@@ -322,9 +323,9 @@
       if (state.queueToDate) {
         query.set("to_date", state.queueToDate);
       }
-      query.set("limit", "25");
       const payload = await apiFetch(`/glide/view?${query.toString()}`);
       state.queueRows = payload.rows || [];
+      state.queueTotal = payload.row_count || 0;
       renderQueue();
       setStatus("Queue loaded from shared leads data.", "success");
     }
@@ -361,7 +362,7 @@
     async function runSearch() {
       setStatus("Running reference search.");
       const query = new URLSearchParams();
-      query.set("limit", "50");
+      query.set("limit", "0");
       if (document.getElementById("searchQuery").value.trim()) {
         query.set("query", document.getElementById("searchQuery").value.trim());
       }
@@ -505,17 +506,25 @@
       await loadQueue();
     });
 
-    document.getElementById("prevQueueBtn").addEventListener("click", () => {
+    document.getElementById("prevQueueBtn").addEventListener("click", async () => {
       state.queuePage = Math.max(1, state.queuePage - 1);
-      renderQueue();
+      await loadQueue();
     });
 
-    document.getElementById("nextQueueBtn").addEventListener("click", () => {
+    document.getElementById("nextQueueBtn").addEventListener("click", async () => {
       state.queuePage += 1;
-      renderQueue();
+      await loadQueue();
     });
 
     document.getElementById("runSearchBtn").addEventListener("click", runSearch);
+    ["searchQuery", "searchLocation", "searchPropertyType"].forEach((id) => {
+      document.getElementById(id).addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          runSearch().catch((error) => setStatus(error.message, "error"));
+        }
+      });
+    });
     document.getElementById("resetSearchBtn").addEventListener("click", () => {
       document.getElementById("searchQuery").value = "";
       document.getElementById("searchLocation").value = "";

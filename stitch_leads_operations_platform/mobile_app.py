@@ -7,6 +7,7 @@ from urllib.parse import quote
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -50,6 +51,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 app = FastAPI(title="Leads Mobile App")
 app.add_middleware(AuthenticationMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
 @app.get("/login")

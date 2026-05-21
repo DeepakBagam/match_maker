@@ -96,6 +96,17 @@ def _normalize_bhk(value: object) -> str:
     return str(int(number)) if number.is_integer() else raw
 
 
+def _normalize_broker_name(value: object) -> str:
+    raw = _safe_str(value)
+    if not raw:
+        return ""
+    cleaned = re.sub(r"^[~@#\-\s]+", "", raw)
+    cleaned = re.sub(r"^(?:call|contact|reach|whatsapp|wa)\s+",
+                     "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.-")
+    return cleaned
+
+
 def _extract_landmark(*values: object) -> str:
     text = " ".join(_safe_str(value) for value in values if _safe_str(value))
     if not text:
@@ -186,7 +197,7 @@ def build_reference_rows(
                 last_seen_at.isoformat(sep=" ", timespec="seconds") if last_seen_at else "",
                 created_date,
                 _safe_str(lead.values.get("Source")),
-                _safe_str(lead.values.get("Name")),
+                _normalize_broker_name(lead.values.get("Name")),
                 _safe_str(lead.values.get("data_status")).upper() or "RAW",
                 confidence_score,
                 str(retention_period),

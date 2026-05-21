@@ -867,7 +867,7 @@ def search_reference_data(
     property_type: str = "",
     broker: str = "",
     phone: str = "",
-    limit: int = 50,
+    limit: int = 0,
     offset: int = 0,
     include_filters: bool = False,
 ):

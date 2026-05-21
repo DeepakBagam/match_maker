@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta content="width=device-width, initial-scale=1.0" name="viewport" />
   <title>Lead Detail Mobile</title>
+  <link href="/static/icons/mobile-app-icon.svg" rel="icon" type="image/svg+xml" />
+  <link href="/static/icons/mobile-app-icon.svg" rel="apple-touch-icon" />
   <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
   <script>
@@ -49,9 +51,12 @@
           <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Lead Detail</p>
           <h1 class="font-display text-2xl text-ink">Mobile Workspace</h1>
         </div>
-        <button class="rounded-full border border-line bg-white p-2 text-soft" id="reloadBtn" type="button">
-          <span class="material-symbols-outlined">refresh</span>
-        </button>
+        <div class="flex items-center gap-2">
+          <a class="rounded-full border border-line bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-soft" href="/logout">Logout</a>
+          <button class="rounded-full border border-line bg-white p-2 text-soft" id="reloadBtn" type="button">
+            <span class="material-symbols-outlined">refresh</span>
+          </button>
+        </div>
       </div>
     </header>
 

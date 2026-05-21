@@ -101,6 +101,7 @@
         </nav>
       </div>
       <div class="flex items-center gap-3">
+        <a class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface transition-colors hover:bg-[#FFF8F4]" href="/logout">Logout</a>
         <button class="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#E3DCD5] bg-white text-on-surface transition-colors hover:bg-[#FFF8F4]" id="openSettingsModalBtn" type="button" title="Settings">
           <span class="material-symbols-outlined text-[20px]">settings</span>
         </button>
@@ -382,7 +383,7 @@
             <div class="flex items-center justify-between gap-4">
               <div>
                 <h2 class="text-xl font-semibold text-on-surface">Lead Queue</h2>
-                <p class="mt-1 text-sm text-on-surface-variant">Switch between Today and All Leads, then separate buyers and sellers without leaving the main queue.</p>
+                <p class="mt-1 text-sm text-on-surface-variant">Switch between Top Leads and All Leads, then separate buyers and sellers without leaving the main queue.</p>
               </div>
               <span class="rounded-full bg-[#FFF1E7] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-primary">FAST MODE</span>
             </div>
@@ -397,7 +398,7 @@
             <div class="mt-4" id="queueTabPanel">
               <div class="grid gap-3 lg:grid-cols-[160px_180px_220px_minmax(0,1fr)]">
                 <select class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="leadViewFilter">
-                  <option value="today">Today</option>
+                  <option value="today">Top Leads</option>
                   <option value="all">All Leads</option>
                 </select>
                 <select class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="leadTypeFilter">
@@ -447,7 +448,7 @@
               <div class="flex items-center justify-between gap-4">
                 <div>
                   <h3 class="text-sm font-bold uppercase tracking-[0.14em] text-on-surface-variant">Lead Inclusion Controls</h3>
-                  <p class="mt-1 text-sm text-on-surface-variant">Today inclusion is backend-only and controlled through DB config values.</p>
+                  <p class="mt-1 text-sm text-on-surface-variant">Top Leads inclusion is backend-only and controlled through DB config values.</p>
                 </div>
                 <button class="rounded-lg border border-[#E3DCD5] bg-white px-3 py-2 text-xs font-semibold text-on-surface hover:bg-[#FFF8F4]" id="refreshGlideFilterConfigBtn" type="button">Refresh Rule</button>
               </div>
@@ -474,7 +475,7 @@
           <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm" hidden>
             <div class="mb-4 flex items-center justify-between gap-4">
               <div>
-                <h2 class="text-xl font-semibold text-on-surface">Today</h2>
+                <h2 class="text-xl font-semibold text-on-surface">Top Leads</h2>
                 <p class="mt-1 text-sm text-on-surface-variant">Priority leads for immediate action.</p>
               </div>
               <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="glideTodayCount">0 leads</span>
@@ -912,7 +913,7 @@
               <div class="space-y-2">
                 <label class="block text-sm font-semibold text-on-surface" for="glide_activity_window_days">Glide Activity Window (Days)</label>
                 <input class="w-full rounded-lg border-[#E3DCD5] bg-white focus:border-primary focus:ring-primary" id="glide_activity_window_days" name="glide_activity_window_days" type="number" min="1" max="365" value="120" />
-                <p class="text-xs text-on-surface-variant">Lead must be active within this many days to qualify for Glide Today.</p>
+                <p class="text-xs text-on-surface-variant">Lead must be active within this many days to qualify for Top Leads.</p>
               </div>
 
               <div class="space-y-2">
@@ -1375,6 +1376,8 @@
       leadToDate: "",
       queuePage: 1,
       queuePageSize: 10,
+      todayTotal: 0,
+      allTotal: 0,
       activeTab: "queue",
       queueSearchHandle: null,
       referenceRows: [],
@@ -1611,7 +1614,7 @@
                 <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row.entry_type || "-")}</span>
                 <span class="rounded-full bg-[#F7F1EB] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row.lead_date || "-")}</span>
               </div>
-              <p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(row.area || "No Area")}${row.bhk ? ` | ${escapeHtml(row.bhk)} BHK` : ""}${row.transaction_type ? ` | ${escapeHtml(row.transaction_type)}` : ""}</p>
+              <p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(row.area || "No Area")}${row.property_type ? ` | ${escapeHtml(row.property_type)}` : ""}${row.bhk ? ` | ${escapeHtml(row.bhk)} BHK` : ""}${row.transaction_type ? ` | ${escapeHtml(row.transaction_type)}` : ""}</p>
               <p class="mt-1 text-sm text-on-surface-variant">${escapeHtml(row.budget || "No Budget")}${row.phone ? ` | ${escapeHtml(row.phone)}` : ""}</p>
             </button>
             <div class="flex flex-wrap items-center gap-2">
@@ -1890,7 +1893,8 @@
     async function loadGlideList(mode, search = "") {
       const query = new URLSearchParams();
       query.set("mode", mode);
-      query.set("limit", "25");
+      query.set("limit", String(glideState.queuePageSize));
+      query.set("offset", String(Math.max(0, (glideState.queuePage - 1) * glideState.queuePageSize)));
       if (search.trim()) {
         query.set("search", search.trim());
       }
@@ -1917,6 +1921,8 @@
     async function ensureGlideModeLoaded(mode, search = "") {
       const normalizedSearch = search.trim();
       const filterKey = JSON.stringify({
+        page: glideState.queuePage,
+        pageSize: glideState.queuePageSize,
         search: normalizedSearch,
         leadType: glideState.leadTypeFilter,
         propertyType: glideState.leadPropertyFilter.trim(),
@@ -1943,43 +1949,41 @@
       return glideState.queueMode === "today" ? glideState.todayRows : glideState.allRows;
     }
 
-    function getPaginatedLeadRows(rows) {
-      const totalPages = Math.max(1, Math.ceil(rows.length / glideState.queuePageSize));
-      glideState.queuePage = Math.min(Math.max(glideState.queuePage, 1), totalPages);
-      const startIndex = (glideState.queuePage - 1) * glideState.queuePageSize;
-      return {
-        pageRows: rows.slice(startIndex, startIndex + glideState.queuePageSize),
-        totalPages,
-        startIndex,
-      };
+    function getActiveQueueTotal() {
+      return glideState.queueMode === "today" ? glideState.todayTotal : glideState.allTotal;
     }
 
     function renderActiveLeadList() {
       const rows = getActiveQueueRows();
-      const label = glideState.queueMode === "today" ? "Today" : "All Leads";
-      const { pageRows, totalPages, startIndex } = getPaginatedLeadRows(rows);
-      document.getElementById("glideLeadCount").textContent = `${rows.length} ${label}`;
-      document.getElementById("leadPageMeta").textContent = rows.length
-        ? `Showing ${startIndex + 1} to ${Math.min(startIndex + glideState.queuePageSize, rows.length)} of ${rows.length} | Page ${glideState.queuePage} of ${totalPages}`
+      const totalRows = getActiveQueueTotal();
+      const label = glideState.queueMode === "today" ? "Top Leads" : "All Leads";
+      const totalPages = Math.max(1, Math.ceil(totalRows / glideState.queuePageSize));
+      glideState.queuePage = Math.min(Math.max(glideState.queuePage, 1), totalPages);
+      const startIndex = totalRows ? ((glideState.queuePage - 1) * glideState.queuePageSize) : 0;
+      document.getElementById("glideLeadCount").textContent = `${totalRows} ${label}`;
+      document.getElementById("leadPageMeta").textContent = totalRows
+        ? `Showing ${startIndex + 1} to ${Math.min(startIndex + rows.length, totalRows)} of ${totalRows} | Page ${glideState.queuePage} of ${totalPages}`
         : "Showing 0 to 0";
       document.getElementById("prevLeadPageBtn").disabled = glideState.queuePage <= 1;
       document.getElementById("nextLeadPageBtn").disabled = glideState.queuePage >= totalPages;
       document.getElementById("leadDateFilterMeta").textContent = glideState.leadFromDate || glideState.leadToDate
         ? `Lead dates ${glideState.leadFromDate || "Start"} to ${glideState.leadToDate || "End"}`
         : "All lead dates";
-      renderGlideList("glideLeadList", pageRows);
+      renderGlideList("glideLeadList", rows);
     }
 
     function applyGlideListPayload(mode, payload) {
       const rows = payload.rows || [];
       if (mode === "today") {
         glideState.todayRows = rows;
+        glideState.todayTotal = payload.row_count || 0;
         document.getElementById("glideTodayCount").textContent = `${payload.row_count || 0} leads`;
         document.getElementById("glideLeadCount").dataset.todayCount = String(payload.row_count || 0);
         renderActiveLeadList();
         return;
       }
       glideState.allRows = rows;
+      glideState.allTotal = payload.row_count || 0;
       document.getElementById("glideAllCount").textContent = `${payload.row_count || 0} leads`;
       document.getElementById("glideLeadCount").dataset.allCount = String(payload.row_count || 0);
       renderActiveLeadList();
@@ -2061,7 +2065,7 @@
         glideState.referenceOffset = 0;
       }
       const query = new URLSearchParams();
-      query.set("limit", "50");
+      query.set("limit", "0");
       query.set("offset", String(glideState.referenceOffset));
       const searchQuery = document.getElementById("searchQuery").value.trim();
       const entryType = document.getElementById("searchEntryType").value;
@@ -2091,7 +2095,7 @@
       }
       glideState.referenceRows = body.rows || [];
       renderReferenceResults(glideState.referenceRows);
-      document.getElementById("referenceSearchMeta").textContent = `${body.row_count || 0} reference rows found. Search is reference-only and does not affect Today or All Leads.`;
+      document.getElementById("referenceSearchMeta").textContent = `${body.row_count || 0} reference rows found. Search is reference-only and does not affect Top Leads or All Leads.`;
     }
 
     async function loadGlideLeadDetail(leadId) {
@@ -2726,13 +2730,13 @@
       glideState.queuePage = 1;
       scheduleUnifiedLeadSearch();
     });
-    document.getElementById("prevLeadPageBtn").addEventListener("click", () => {
+    document.getElementById("prevLeadPageBtn").addEventListener("click", async () => {
       glideState.queuePage = Math.max(1, glideState.queuePage - 1);
-      renderActiveLeadList();
+      await loadGlideView();
     });
-    document.getElementById("nextLeadPageBtn").addEventListener("click", () => {
+    document.getElementById("nextLeadPageBtn").addEventListener("click", async () => {
       glideState.queuePage += 1;
-      renderActiveLeadList();
+      await loadGlideView();
     });
     document.getElementById("leadsTabQueueBtn").addEventListener("click", () => setLeadsTab("queue"));
     document.getElementById("leadsTabSearchBtn").addEventListener("click", async () => {

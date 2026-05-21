@@ -1,0 +1,22 @@
+{
+  "name": "Lead Vault",
+  "short_name": "Lead Vault",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#D9907A",
+  "theme_color": "#D9907A",
+  "icons": [
+    {
+      "src": "/static/icons/mobile-app-icon.svg",
+      "sizes": "1024x1024",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/mobile-app-icon-maskable.svg",
+      "sizes": "1024x1024",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
