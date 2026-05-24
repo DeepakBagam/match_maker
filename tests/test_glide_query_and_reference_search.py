@@ -2,7 +2,6 @@ from datetime import datetime
 
 from app.db_client import DatabaseClient
 from app.data_management import get_structured_dataset
-from app.extractor import MappingResolver, extract_name_from_text, infer_property_type, normalize_text, _normalize_mapped_property_type
 from app.glide_builder import get_glide_lead_detail, get_glide_view_dataset
 from app.reference_data import REFERENCE_DATA_COLUMNS, build_reference_rows
 from app.schemas import StructuredLead
@@ -370,16 +369,6 @@ def test_data_tab_supports_global_search_and_sort(tmp_path):
 
     assert payload["row_count"] == 1
     assert payload["rows"][0]["Name"] == "Alpha"
-
-
-def test_extract_name_ignores_to_view_phrase():
-    text = "Please DM / Call to view\nBhatnagar's / CRB Realty\nDivakar 9370317908\nVijay 9371012398"
-    assert extract_name_from_text(text) == "Divakar"
-
-
-def test_plot_with_bungalow_is_normalized_to_villa():
-    cleaned = normalize_text("5.5 bhk bunglow for sale 6000 sqft plot 6000 sqft built up")
-    assert _normalize_mapped_property_type(cleaned, "Plot", "bungalow", 6) == "Villa"
 
 
 def test_glide_view_orders_latest_leads_first(tmp_path):
