@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .reference_data import REFERENCE_DATA_COLUMNS
+from .reference_data import REFERENCE_DATA_COLUMNS, _extract_broker_names
 from .schemas import (
     CLEAN_DATA_COLUMNS,
     FINAL_VALIDATION_COLUMNS,
@@ -232,6 +232,170 @@ def _column_name(column: str) -> str:
     return normalized
 
 
+def _normalize_search_text(value: object) -> str:
+    text = "" if value is None else str(value).lower()
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _safe_str(value: object) -> str:
+    return "" if value is None else str(value).strip()
+
+
+def _contains_partial(value: object, query: str) -> bool:
+    haystack = _normalize_search_text(value)
+    needle = _normalize_search_text(query)
+    if not needle:
+        return True
+    return needle in haystack
+
+
+def _contains_all_terms(value: object, query: str) -> bool:
+    haystack = _normalize_search_text(value)
+    needle = _normalize_search_text(query)
+    if not needle:
+        return True
+    if not haystack:
+        return False
+    if needle in haystack:
+        return True
+    terms = [term for term in needle.split(" ") if term]
+    return all(term in haystack for term in terms)
+
+
+def _contains_phrase_with_boundaries(value: object, query: str) -> bool:
+    haystack = _normalize_search_text(value)
+    needle = _normalize_search_text(query)
+    if not needle:
+        return True
+    if not haystack:
+        return False
+    pattern = rf"(?<![a-z0-9]){re.escape(needle)}(?![a-z0-9])"
+    return re.search(pattern, haystack) is not None
+
+
+def _build_multi_term_like_clause(fields: list[str], value: str) -> tuple[str, list[Any]]:
+    terms = [term for term in _normalize_search_text(value).split(" ") if term]
+    if not terms:
+        return "", []
+    clause = (
+        "("
+        + " AND ".join(
+            "(" + " OR ".join([f'LOWER(COALESCE({field}, \'\')) LIKE ?' for field in fields]) + ")"
+            for _ in terms
+        )
+        + ")"
+    )
+    params: list[Any] = []
+    for term in terms:
+        params.extend([f"%{term}%"] * len(fields))
+    return clause, params
+
+
+def _digits_only(value: object) -> str:
+    return re.sub(r"\D+", "", "" if value is None else str(value))
+
+
+def _normalize_sort_timestamp(value: object) -> str:
+    text = _safe_str(value)
+    if not text:
+        return ""
+    if len(text) >= 19 and text[4:5] == "-" and text[7:8] == "-":
+        return text[:19]
+    if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
+        return text[:10]
+    return _normalize_search_text(text)
+
+
+def _reference_search_primary_blob(row: dict[str, str]) -> str:
+    parts = [
+        row.get("Name", ""),
+        row.get("Phone", ""),
+        row.get("Location", ""),
+        row.get("Property_Type", ""),
+        row.get("BHK", ""),
+        row.get("Budget", ""),
+        row.get("Broker", ""),
+        row.get("Society", ""),
+        row.get("Landmark", ""),
+        row.get("Source", ""),
+    ]
+    return " ".join(_safe_str(part) for part in parts if _safe_str(part))
+
+
+def _reference_search_broker_primary_blob(row: dict[str, str]) -> str:
+    parts = [
+        row.get("Broker", ""),
+        row.get("Name", ""),
+        row.get("Phone", ""),
+    ]
+    return " ".join(_safe_str(part) for part in parts if _safe_str(part))
+
+
+def _reference_search_secondary_blob(row: dict[str, str]) -> str:
+    parts = [
+        row.get("_dynamic_broker", ""),
+        row.get("_raw_message", ""),
+        row.get("_cleaned_message", ""),
+        row.get("_lead_summary", ""),
+    ]
+    return " ".join(_safe_str(part) for part in parts if _safe_str(part))
+
+
+def _reference_search_dedupe_key(row: dict[str, str]) -> tuple[str, ...]:
+    lead_id = _safe_str(row.get("Lead_ID", ""))
+    if lead_id.startswith(_STRUCTURED_ONLY_LEAD_PREFIX):
+        return (lead_id,)
+
+    name_key = _normalize_search_text(row.get("Name", ""))
+    phone_key = _digits_only(row.get("Phone", ""))
+    location_key = _normalize_search_text(row.get("Location", ""))
+    property_key = _normalize_search_text(row.get("Property_Type", ""))
+    bhk_key = _normalize_search_text(row.get("BHK", ""))
+    budget_key = _normalize_search_text(row.get("Budget", ""))
+    entry_key = _normalize_search_text(row.get("Entry_Type", ""))
+    last_seen_key = _normalize_sort_timestamp(row.get("Last_Seen", ""))
+    created_key = _normalize_sort_timestamp(row.get("Created_Date", ""))
+
+    if lead_id:
+        return (
+            lead_id,
+            name_key,
+            phone_key,
+            location_key,
+            property_key,
+            bhk_key,
+            budget_key,
+            last_seen_key or created_key,
+            entry_key,
+        )
+    return (
+        "",
+        name_key,
+        phone_key,
+        location_key,
+        property_key,
+        bhk_key,
+        budget_key,
+        last_seen_key or created_key,
+        entry_key,
+    )
+
+
+def _reference_search_sort_key(row: dict[str, str]) -> tuple[str, int, str, str]:
+    sort_timestamp = _normalize_sort_timestamp(row.get("Last_Seen") or row.get("Created_Date"))
+    origin_priority = 1 if row.get("_origin") == "reference" else 0
+    return (
+        sort_timestamp,
+        origin_priority,
+        _safe_str(row.get("Lead_ID", "")),
+        _safe_str(row.get("Name", "")),
+    )
+
+
+_STRUCTURED_ONLY_LEAD_PREFIX = "structured-only:"
+
+
 @dataclass
 class DatabaseClient:
     database_url: str
@@ -435,6 +599,10 @@ class DatabaseClient:
         offset: int = 0,
         from_date: str | None = None,
         to_date: str | None = None,
+        search: str = "",
+        column_filters: dict[str, str] | None = None,
+        sort_column: str = "",
+        sort_direction: str = "desc",
     ) -> dict[str, Any]:
         self.ensure_structure()
         columns = REQUIRED_TABS[tab]
@@ -443,6 +611,30 @@ class DatabaseClient:
         offset = max(0, offset)
 
         where_sql, params = self._build_date_filter(columns, from_date, to_date)
+        normalized_search = search.strip()
+        if normalized_search:
+            search_parts = [
+                f'LOWER(COALESCE("{_column_name(column)}", \'\')) LIKE ?'
+                for column in columns
+            ]
+            where_sql = f"{where_sql} {'AND' if where_sql else 'WHERE'} ({' OR '.join(search_parts)})"
+            params.extend([f"%{normalized_search.lower()}%"] * len(columns))
+
+        normalized_column_filters = {
+            str(column): str(value).strip()
+            for column, value in (column_filters or {}).items()
+            if str(column) in columns and str(value).strip()
+        }
+        for column, value in normalized_column_filters.items():
+            where_sql = f'{where_sql} {"AND" if where_sql else "WHERE"} LOWER(COALESCE("{_column_name(column)}", \'\')) LIKE ?'
+            params.append(f"%{value.lower()}%")
+
+        normalized_sort_column = sort_column.strip()
+        sort_dir = "ASC" if str(sort_direction).strip().lower() == "asc" else "DESC"
+        if normalized_sort_column in columns:
+            order_sql = f'ORDER BY COALESCE("{_column_name(normalized_sort_column)}", \'\') {sort_dir}, row_id DESC'
+        else:
+            order_sql = "ORDER BY row_id DESC"
 
         select_columns = ", ".join(f'"{_column_name(column)}"' for column in columns)
         with self._connect() as connection:
@@ -451,7 +643,7 @@ class DatabaseClient:
                 params,
             ).fetchone()["row_count"]
             rows = connection.execute(
-                f'SELECT {select_columns} FROM "{table_name}" {where_sql} ORDER BY row_id DESC LIMIT ? OFFSET ?',
+                f'SELECT {select_columns} FROM "{table_name}" {where_sql} {order_sql} LIMIT ? OFFSET ?',
                 [*params, limit, offset],
             ).fetchall()
 
@@ -464,6 +656,10 @@ class DatabaseClient:
             "row_count": total,
             "page_size": limit,
             "offset": offset,
+            "search": normalized_search,
+            "column_filters": normalized_column_filters,
+            "sort_column": normalized_sort_column,
+            "sort_direction": sort_dir.lower(),
         }
 
     def get_table_rows(
@@ -472,16 +668,33 @@ class DatabaseClient:
         *,
         from_date: str | None = None,
         to_date: str | None = None,
+        search: str = "",
+        sort_column: str = "",
+        sort_direction: str = "desc",
     ) -> dict[str, Any]:
         self.ensure_structure()
         columns = REQUIRED_TABS[tab]
         table_name = _table_name(tab)
         where_sql, params = self._build_date_filter(columns, from_date, to_date)
+        normalized_search = search.strip()
+        if normalized_search:
+            search_parts = [
+                f'LOWER(COALESCE("{_column_name(column)}", \'\')) LIKE ?'
+                for column in columns
+            ]
+            where_sql = f"{where_sql} {'AND' if where_sql else 'WHERE'} ({' OR '.join(search_parts)})"
+            params.extend([f"%{normalized_search.lower()}%"] * len(columns))
+        normalized_sort_column = sort_column.strip()
+        sort_dir = "ASC" if str(sort_direction).strip().lower() == "asc" else "DESC"
+        if normalized_sort_column in columns:
+            order_sql = f'ORDER BY COALESCE("{_column_name(normalized_sort_column)}", \'\') {sort_dir}, row_id DESC'
+        else:
+            order_sql = "ORDER BY row_id DESC"
         select_columns = ", ".join(f'"{_column_name(column)}"' for column in columns)
 
         with self._connect() as connection:
             rows = connection.execute(
-                f'SELECT {select_columns} FROM "{table_name}" {where_sql} ORDER BY row_id DESC',
+                f'SELECT {select_columns} FROM "{table_name}" {where_sql} {order_sql}',
                 params,
             ).fetchall()
 
@@ -494,6 +707,9 @@ class DatabaseClient:
             "columns": list(columns),
             "rows": payload_rows,
             "row_count": len(payload_rows),
+            "search": normalized_search,
+            "sort_column": normalized_sort_column,
+            "sort_direction": sort_dir.lower(),
         }
 
     def _build_date_filter(
@@ -924,6 +1140,283 @@ class DatabaseClient:
         self.sync_clean_data_formula()
         return counts
 
+    def _load_reference_search_reference_rows(
+        self,
+        filters: dict[str, str],
+        *,
+        query_scope: str = "",
+    ) -> list[dict[str, str]]:
+        table_name = _table_name("Reference Data")
+        structured_table = _table_name("Structured Data")
+        select_columns = ", ".join(
+            [f'ref."{_column_name(column)}" AS "{column}"' for column in REFERENCE_DATA_COLUMNS]
+            + [
+                'ref.row_id AS "_reference_row_id"',
+                f'struct."{_column_name("Raw Message")}" AS "_raw_message"',
+                f'struct."{_column_name("Cleaned Message")}" AS "_cleaned_message"',
+                f'struct."{_column_name("Lead Summary")}" AS "_lead_summary"',
+                f'struct."{_column_name("Source")}" AS "_structured_source"',
+            ]
+        )
+
+        where_parts: list[str] = []
+        params: list[Any] = []
+        if filters["entry_type"]:
+            where_parts.append(f'LOWER(COALESCE(ref."{_column_name("Entry_Type")}", \'\')) = ?')
+            params.append(filters["entry_type"])
+        if filters["lead_type"]:
+            where_parts.append(f'LOWER(COALESCE(ref."{_column_name("Lead_Type")}", \'\')) = ?')
+            params.append(filters["lead_type"])
+        if filters["location"]:
+            where_parts.append(f'LOWER(COALESCE(ref."{_column_name("Location")}", \'\')) LIKE ?')
+            params.append(f'%{filters["location"].lower()}%')
+        if filters["property_type"]:
+            property_clause, property_params = _build_multi_term_like_clause(
+                [
+                    f'ref."{_column_name("Property_Type")}"',
+                    f'ref."{_column_name("BHK")}"',
+                    f'ref."{_column_name("Budget")}"',
+                ],
+                filters["property_type"],
+            )
+            if property_clause:
+                where_parts.append(property_clause)
+                params.extend(property_params)
+        if filters["phone"]:
+            where_parts.append(f'LOWER(COALESCE(ref."{_column_name("Phone")}", \'\')) LIKE ?')
+            params.append(f'%{filters["phone"].lower()}%')
+        if filters["broker"]:
+            broker_clause, broker_params = _build_multi_term_like_clause(
+                [
+                    f'ref."{_column_name("Broker")}"',
+                    f'ref."{_column_name("Name")}"',
+                    f'ref."{_column_name("Phone")}"',
+                    f'struct."{_column_name("Raw Message")}"',
+                    f'struct."{_column_name("Cleaned Message")}"',
+                    f'struct."{_column_name("Lead Summary")}"',
+                ],
+                filters["broker"],
+            )
+            if broker_clause:
+                where_parts.append(broker_clause)
+                params.extend(broker_params)
+        if filters["query"]:
+            primary_fields = [
+                f'ref."{_column_name("Name")}"',
+                f'ref."{_column_name("Phone")}"',
+                f'ref."{_column_name("Location")}"',
+                f'ref."{_column_name("Property_Type")}"',
+                f'ref."{_column_name("BHK")}"',
+                f'ref."{_column_name("Budget")}"',
+                f'ref."{_column_name("Broker")}"',
+                f'ref."{_column_name("Society")}"',
+                f'ref."{_column_name("Landmark")}"',
+                f'ref."{_column_name("Source")}"',
+            ]
+            secondary_fields = [
+                f'struct."{_column_name("Raw Message")}"',
+                f'struct."{_column_name("Cleaned Message")}"',
+                f'struct."{_column_name("Lead Summary")}"',
+            ]
+            query_clause, query_params = _build_multi_term_like_clause(
+                secondary_fields if query_scope == "secondary" else [*primary_fields, *secondary_fields],
+                filters["query"],
+            )
+            if query_clause:
+                where_parts.append(query_clause)
+                params.extend(query_params)
+
+        where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                f'''
+                SELECT {select_columns}
+                FROM "{table_name}" AS ref
+                LEFT JOIN "{structured_table}" AS struct
+                  ON struct."{_column_name("Lead_ID")}" = ref."{_column_name("Lead_ID")}"
+                {where_sql}
+                ORDER BY COALESCE(ref."{_column_name("Last_Seen")}", '') DESC, ref.row_id DESC
+                ''',
+                params,
+            ).fetchall()
+
+        output: list[dict[str, str]] = []
+        for row in rows:
+            payload = {column: ("" if row[column] is None else str(row[column])) for column in REFERENCE_DATA_COLUMNS}
+            hidden = {
+                "_raw_message": "" if row["_raw_message"] is None else str(row["_raw_message"]),
+                "_cleaned_message": "" if row["_cleaned_message"] is None else str(row["_cleaned_message"]),
+                "_lead_summary": "" if row["_lead_summary"] is None else str(row["_lead_summary"]),
+                "_structured_source": "" if row["_structured_source"] is None else str(row["_structured_source"]),
+            }
+            dynamic_broker = _extract_broker_names(
+                hidden["_raw_message"],
+                hidden["_cleaned_message"],
+                payload.get("Broker", ""),
+                payload.get("Name", ""),
+            )
+            payload["Property_Description"] = hidden["_lead_summary"] or hidden["_cleaned_message"] or hidden["_raw_message"] or ""
+            payload["Structured_Only"] = "FALSE"
+            payload["_origin"] = "reference"
+            payload["_dynamic_broker"] = dynamic_broker
+            payload.update(hidden)
+            output.append(payload)
+        return output
+
+    def _load_reference_search_structured_rows(
+        self,
+        filters: dict[str, str],
+        *,
+        query_scope: str = "",
+    ) -> list[dict[str, str]]:
+        table_name = _table_name("Structured Data")
+        select_columns = ", ".join(
+            [
+                "row_id",
+                f'"{_column_name("Lead_ID")}" AS lead_id',
+                f'"{_column_name("Name")}" AS name',
+                f'"{_column_name("Contact Number")}" AS phone',
+                f'"{_column_name("Type")}" AS lead_type',
+                f'"{_column_name("Location")}" AS location',
+                f'"{_column_name("Property Type")}" AS property_type',
+                f'"{_column_name("Budget Range")}" AS budget',
+                f'"{_column_name("BHK")}" AS bhk',
+                f'"{_column_name("Project Name")}" AS society',
+                f'"{_column_name("Last Seen")}" AS last_seen',
+                f'"{_column_name("First Seen")}" AS created_date',
+                f'"{_column_name("Source")}" AS source',
+                f'"{_column_name("Raw Message")}" AS raw_message',
+                f'"{_column_name("Cleaned Message")}" AS cleaned_message',
+                f'"{_column_name("Lead Summary")}" AS lead_summary',
+                f'"{_column_name("data_status")}" AS data_status',
+                f'"{_column_name("Confidence Score")}" AS confidence_score',
+            ]
+        )
+
+        where_parts: list[str] = []
+        params: list[Any] = []
+        if filters["entry_type"] == "property":
+            where_parts.append(f'COALESCE("{_column_name("Type")}", \'\') = \'Seller\'')
+        elif filters["entry_type"] == "requirement":
+            where_parts.append(f'COALESCE("{_column_name("Type")}", \'\') = \'Buyer\'')
+        if filters["lead_type"]:
+            where_parts.append(f'LOWER(COALESCE("{_column_name("Type")}", \'\')) = ?')
+            params.append(filters["lead_type"])
+        if filters["location"]:
+            where_parts.append(f'LOWER(COALESCE("{_column_name("Location")}", \'\')) LIKE ?')
+            params.append(f'%{filters["location"].lower()}%')
+        if filters["property_type"]:
+            property_clause, property_params = _build_multi_term_like_clause(
+                [
+                    f'"{_column_name("Property Type")}"',
+                    f'"{_column_name("BHK")}"',
+                    f'"{_column_name("Budget Range")}"',
+                ],
+                filters["property_type"],
+            )
+            if property_clause:
+                where_parts.append(property_clause)
+                params.extend(property_params)
+        if filters["phone"]:
+            where_parts.append(f'LOWER(COALESCE("{_column_name("Contact Number")}", \'\')) LIKE ?')
+            params.append(f'%{filters["phone"].lower()}%')
+        if filters["broker"]:
+            broker_clause, broker_params = _build_multi_term_like_clause(
+                [
+                    f'"{_column_name("Name")}"',
+                    f'"{_column_name("Contact Number")}"',
+                    f'"{_column_name("Raw Message")}"',
+                    f'"{_column_name("Cleaned Message")}"',
+                    f'"{_column_name("Lead Summary")}"',
+                ],
+                filters["broker"],
+            )
+            if broker_clause:
+                where_parts.append(broker_clause)
+                params.extend(broker_params)
+        if filters["query"]:
+            primary_fields = [
+                f'"{_column_name("Name")}"',
+                f'"{_column_name("Contact Number")}"',
+                f'"{_column_name("Location")}"',
+                f'"{_column_name("Property Type")}"',
+                f'"{_column_name("BHK")}"',
+                f'"{_column_name("Budget Range")}"',
+                f'"{_column_name("Project Name")}"',
+                f'"{_column_name("Source")}"',
+            ]
+            secondary_fields = [
+                f'"{_column_name("Raw Message")}"',
+                f'"{_column_name("Cleaned Message")}"',
+                f'"{_column_name("Lead Summary")}"',
+            ]
+            query_clause, query_params = _build_multi_term_like_clause(
+                secondary_fields if query_scope == "secondary" else [*primary_fields, *secondary_fields],
+                filters["query"],
+            )
+            if query_clause:
+                where_parts.append(query_clause)
+                params.extend(query_params)
+
+        where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                f'''
+                SELECT {select_columns}
+                FROM "{table_name}"
+                {where_sql}
+                ORDER BY COALESCE("{_column_name("Last Seen")}", '') DESC, row_id DESC
+                ''',
+                params,
+            ).fetchall()
+
+        output: list[dict[str, str]] = []
+        for row in rows:
+            record = {key: ("" if row[key] is None else str(row[key])) for key in row.keys()}
+            dynamic_broker = _extract_broker_names(
+                record.get("raw_message", ""),
+                record.get("cleaned_message", ""),
+                "",
+                record.get("name", ""),
+            )
+            lead_type = _safe_str(record.get("lead_type", ""))
+            synthetic_lead_id = record.get("lead_id", "") or f'{_STRUCTURED_ONLY_LEAD_PREFIX}{record.get("row_id", "")}'
+            entry_type = "Property" if lead_type == "Seller" else "Requirement" if lead_type == "Buyer" else "Structured Only"
+            output.append(
+                {
+                    "Lead_ID": synthetic_lead_id,
+                    "Name": record.get("name", ""),
+                    "Phone": record.get("phone", ""),
+                    "Entry_Type": entry_type,
+                    "Lead_Type": lead_type,
+                    "Location": record.get("location", ""),
+                    "Property_Type": record.get("property_type", ""),
+                    "Budget": record.get("budget", ""),
+                    "BHK": record.get("bhk", ""),
+                    "Society": record.get("society", ""),
+                    "Landmark": "",
+                    "Last_Seen": record.get("last_seen", ""),
+                    "Created_Date": record.get("created_date", ""),
+                    "Source": record.get("source", ""),
+                    "Broker": record.get("name", ""),
+                    "data_status": record.get("data_status", ""),
+                    "Confidence_Score": record.get("confidence_score", ""),
+                    "retention_period": "",
+                    "retention_until": "",
+                    "Property_Description": record.get("lead_summary") or record.get("cleaned_message") or record.get("raw_message") or "",
+                    "Structured_Only": "TRUE" if synthetic_lead_id.startswith(_STRUCTURED_ONLY_LEAD_PREFIX) else "FALSE",
+                    "_origin": "structured",
+                    "_dynamic_broker": dynamic_broker,
+                    "_raw_message": record.get("raw_message", ""),
+                    "_cleaned_message": record.get("cleaned_message", ""),
+                    "_lead_summary": record.get("lead_summary", ""),
+                    "_structured_source": record.get("source", ""),
+                }
+            )
+        return output
+
     def search_reference_data(
         self,
         *,
@@ -941,155 +1434,328 @@ class DatabaseClient:
         limit = 0 if int(limit or 0) <= 0 else max(1, min(int(limit), 5000))
         offset = max(0, offset)
 
-        if not hasattr(self, "_connect"):
-            dataset = self.get_table_page("Reference Data", limit=50000, offset=0)
-            rows = dataset.get("rows", [])
-            normalized_query = query.strip().lower()
-            filters = {
-                "entry_type": entry_type.strip().lower(),
-                "lead_type": lead_type.strip().lower(),
-                "location": location.strip().lower(),
-                "property_type": property_type.strip().lower(),
-                "broker": broker.strip().lower(),
-                "phone": phone.strip().lower(),
-            }
-
-            def matches(row: dict[str, str]) -> bool:
-                if filters["entry_type"] and row.get("Entry_Type", "").strip().lower() != filters["entry_type"]:
-                    return False
-                if filters["lead_type"] and row.get("Lead_Type", "").strip().lower() != filters["lead_type"]:
-                    return False
-                if filters["location"] and filters["location"] not in row.get("Location", "").strip().lower():
-                    return False
-                if filters["property_type"]:
-                    property_blob = " ".join(
-                        [
-                            row.get("Property_Type", ""),
-                            row.get("BHK", ""),
-                            row.get("Budget", ""),
-                        ]
-                    ).strip().lower()
-                    if filters["property_type"] not in property_blob:
-                        return False
-                if filters["broker"] and filters["broker"] not in row.get("Broker", "").strip().lower():
-                    return False
-                if filters["phone"] and filters["phone"] not in row.get("Phone", "").strip().lower():
-                    return False
-                if normalized_query:
-                    blob = " ".join(
-                        row.get(field, "")
-                        for field in ("Name", "Phone", "Location", "Property_Type", "BHK", "Budget", "Broker", "Society", "Landmark")
-                    ).lower()
-                    if normalized_query not in blob:
-                        return False
-                return True
-
-            filtered = [row for row in rows if matches(row)]
-            filtered.sort(
-                key=lambda row: (
-                    str(row.get("Last_Seen", "") or ""),
-                    str(row.get("Lead_ID", "") or ""),
-                ),
-                reverse=True,
-            )
-            page_rows = filtered[offset:] if limit == 0 else filtered[offset: offset + limit]
+        filters = {
+            "entry_type": entry_type.strip().lower(),
+            "lead_type": lead_type.strip().lower(),
+            "location": location.strip(),
+            "property_type": property_type.strip(),
+            "broker": broker.strip(),
+            "phone": phone.strip(),
+            "query": query.strip(),
+        }
+        core_filter_active = any(
+            filters[key]
+            for key in ("query", "broker", "location", "property_type", "phone")
+        )
+        if not filters["query"] and (filters["broker"] or filters["location"]):
+            structured_rows = self._search_structured_reference_primary_filters(filters)
+            page_rows = structured_rows[offset:] if limit == 0 else structured_rows[offset: offset + limit]
             return {
                 "columns": list(REFERENCE_DATA_COLUMNS),
                 "rows": page_rows,
-                "row_count": len(filtered),
+                "row_count": len(structured_rows),
                 "page_size": len(page_rows) if limit == 0 else limit,
                 "offset": offset,
             }
+        query_scope = "primary" if filters["query"] else ""
+        candidates = self._load_reference_search_reference_rows(filters, query_scope=query_scope)
+        if core_filter_active:
+            candidates.extend(self._load_reference_search_structured_rows(filters, query_scope=query_scope))
 
-        table_name = _table_name("Reference Data")
-        where_parts: list[str] = []
-        params: list[Any] = []
-
-        def add_exact(column: str, value: str) -> None:
-            raw = value.strip()
-            if not raw:
-                return
-            where_parts.append(f'LOWER(COALESCE("{_column_name(column)}", \'\')) = ?')
-            params.append(raw.lower())
-
-        def add_contains(column: str, value: str) -> None:
-            raw = value.strip()
-            if not raw:
-                return
-            where_parts.append(f'LOWER(COALESCE("{_column_name(column)}", \'\')) LIKE ?')
-            params.append(f"%{raw.lower()}%")
-
-        add_exact("Entry_Type", entry_type)
-        add_exact("Lead_Type", lead_type)
-        add_contains("Location", location)
-        raw_property_type = property_type.strip()
-        if raw_property_type:
-            where_parts.append(
-                "("
-                + " OR ".join(
+        def matches_non_query_filters(row: dict[str, str]) -> bool:
+            if filters["entry_type"] and _safe_str(row["Entry_Type"]).lower() != filters["entry_type"]:
+                return False
+            if filters["lead_type"] and _safe_str(row["Lead_Type"]).lower() != filters["lead_type"]:
+                return False
+            if filters["location"] and not _contains_phrase_with_boundaries(row["Location"], filters["location"]):
+                return False
+            if filters["property_type"]:
+                property_blob = " ".join(
                     [
-                        f'LOWER(COALESCE("{_column_name("Property_Type")}", \'\')) LIKE ?',
-                        f'LOWER(COALESCE("{_column_name("BHK")}", \'\')) LIKE ?',
-                        f'LOWER(COALESCE("{_column_name("Budget")}", \'\')) LIKE ?',
+                        _safe_str(row["Property_Type"]),
+                        _safe_str(row["BHK"]),
+                        _safe_str(row["Budget"]),
                     ]
                 )
-                + ")"
-            )
-            like_property = f"%{raw_property_type.lower()}%"
-            params.extend([like_property, like_property, like_property])
-        add_contains("Broker", broker)
-        add_contains("Phone", phone)
+                if not _contains_phrase_with_boundaries(property_blob, filters["property_type"]):
+                    return False
+            if filters["phone"] and not _contains_partial(row["Phone"], filters["phone"]):
+                return False
+            return True
 
-        normalized_query = query.strip().lower()
-        if normalized_query:
-            search_columns = ["Name", "Phone", "Location", "Property_Type", "BHK", "Budget", "Broker", "Society", "Landmark"]
-            where_parts.append(
-                "(" + " OR ".join(
-                    f'LOWER(COALESCE("{_column_name(column)}", \'\')) LIKE ?'
-                    for column in search_columns
-                ) + ")"
-            )
-            params.extend([f"%{normalized_query}%"] * len(search_columns))
-
-        where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
-        select_columns = ", ".join(
-            f'"{_column_name(column)}" AS "{column}"'
-            for column in REFERENCE_DATA_COLUMNS
-        )
-        with self._connect() as connection:
-            total = connection.execute(
-                f'SELECT COUNT(*) AS row_count FROM "{table_name}" {where_sql}',
-                params,
-            ).fetchone()["row_count"]
-            if limit == 0:
-                rows = connection.execute(
-                    f'''
-                    SELECT {select_columns}
-                    FROM "{table_name}"
-                    {where_sql}
-                    ORDER BY COALESCE("{_column_name("Last_Seen")}", '') DESC, COALESCE("{_column_name("Lead_ID")}", '') DESC
-                    ''',
-                    params,
-                ).fetchall()
+        filtered = [row for row in candidates if matches_non_query_filters(row)]
+        if filters["broker"]:
+            primary_rows = [row for row in filtered if _contains_all_terms(_reference_search_broker_primary_blob(row), filters["broker"])]
+            if primary_rows:
+                filtered = primary_rows
             else:
-                rows = connection.execute(
-                    f'''
-                    SELECT {select_columns}
-                    FROM "{table_name}"
-                    {where_sql}
-                    ORDER BY COALESCE("{_column_name("Last_Seen")}", '') DESC, COALESCE("{_column_name("Lead_ID")}", '') DESC
-                    LIMIT ? OFFSET ?
-                    ''',
-                    [*params, limit, offset],
-                ).fetchall()
+                filtered = [row for row in filtered if _contains_all_terms(_reference_search_secondary_blob(row), filters["broker"])]
+        if filters["query"]:
+            primary_rows = [row for row in filtered if _contains_all_terms(_reference_search_broker_primary_blob(row), filters["query"])]
+            if primary_rows:
+                filtered = primary_rows
+            else:
+                location_rows = [row for row in filtered if _contains_phrase_with_boundaries(row.get("Location", ""), filters["query"])]
+                if location_rows:
+                    filtered = location_rows
+                else:
+                    property_rows = []
+                    for row in filtered:
+                        property_blob = " ".join(
+                            [
+                                _safe_str(row.get("Property_Type", "")),
+                                _safe_str(row.get("BHK", "")),
+                                _safe_str(row.get("Budget", "")),
+                                _safe_str(row.get("Society", "")),
+                                _safe_str(row.get("Landmark", "")),
+                                _safe_str(row.get("Source", "")),
+                            ]
+                        )
+                        if _contains_phrase_with_boundaries(property_blob, filters["query"]) or _contains_all_terms(property_blob, filters["query"]):
+                            property_rows.append(row)
+                    if property_rows:
+                        filtered = property_rows
+                    else:
+                        candidates = self._load_reference_search_reference_rows(filters, query_scope="secondary")
+                        if core_filter_active:
+                            candidates.extend(self._load_reference_search_structured_rows(filters, query_scope="secondary"))
+                        filtered = [row for row in candidates if matches_non_query_filters(row)]
+                        filtered = [row for row in filtered if _contains_all_terms(_reference_search_secondary_blob(row), filters["query"])]
+
+        ordered_rows = sorted(filtered, key=_reference_search_sort_key, reverse=True)
+        deduped_rows: list[dict[str, str]] = []
+        if core_filter_active:
+            seen_keys: dict[tuple[str, ...], str] = {}
+            for row in ordered_rows:
+                dedupe_key = _reference_search_dedupe_key(row)
+                origin = _safe_str(row.get("_origin", ""))
+                existing_origin = seen_keys.get(dedupe_key, "")
+                if existing_origin and existing_origin != origin:
+                    continue
+                seen_keys.setdefault(dedupe_key, origin)
+                deduped_rows.append({column: row.get(column, "") for column in REFERENCE_DATA_COLUMNS + ["Property_Description", "Structured_Only"]})
+        else:
+            deduped_rows = [
+                {column: row.get(column, "") for column in REFERENCE_DATA_COLUMNS + ["Property_Description", "Structured_Only"]}
+                for row in ordered_rows
+            ]
 
         return {
             "columns": list(REFERENCE_DATA_COLUMNS),
-            "rows": [{column: ("" if row[column] is None else str(row[column])) for column in REFERENCE_DATA_COLUMNS} for row in rows],
-            "row_count": int(total),
-            "page_size": len(rows) if limit == 0 else limit,
+            "rows": deduped_rows[offset:] if limit == 0 else deduped_rows[offset: offset + limit],
+            "row_count": len(deduped_rows),
+            "page_size": len(deduped_rows[offset:]) if limit == 0 else limit,
             "offset": offset,
         }
+
+    def _search_structured_reference_primary_filters(
+        self,
+        filters: dict[str, str],
+    ) -> list[dict[str, str]]:
+        table_name = _table_name("Structured Data")
+        where_parts: list[str] = []
+        params: list[Any] = []
+
+        if filters["entry_type"] == "property":
+            where_parts.append(f'COALESCE("{_column_name("Type")}", \'\') = \'Seller\'')
+        elif filters["entry_type"] == "requirement":
+            where_parts.append(f'COALESCE("{_column_name("Type")}", \'\') = \'Buyer\'')
+        if filters["lead_type"]:
+            where_parts.append(f'LOWER(COALESCE("{_column_name("Type")}", \'\')) = ?')
+            params.append(filters["lead_type"])
+        if filters["broker"]:
+            where_parts.append(f'LOWER(COALESCE("{_column_name("Name")}", \'\')) LIKE ?')
+            params.append(f'%{filters["broker"].lower()}%')
+        if filters["location"]:
+            where_parts.append(f'LOWER(COALESCE("{_column_name("Location")}", \'\')) LIKE ?')
+            params.append(f'%{filters["location"].lower()}%')
+        if filters["phone"]:
+            where_parts.append(f'LOWER(COALESCE("{_column_name("Contact Number")}", \'\')) LIKE ?')
+            params.append(f'%{filters["phone"].lower()}%')
+        if filters["property_type"]:
+            where_parts.append(
+                "("
+                f'LOWER(COALESCE("{_column_name("Property Type")}", \'\')) LIKE ? '
+                f'OR LOWER(COALESCE("{_column_name("BHK")}", \'\')) LIKE ? '
+                f'OR LOWER(COALESCE("{_column_name("Budget Range")}", \'\')) LIKE ?'
+                ")"
+            )
+            like_value = f'%{filters["property_type"].lower()}%'
+            params.extend([like_value, like_value, like_value])
+
+        where_sql = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+        with self._connect() as connection:
+            rows = connection.execute(
+                f'''
+                SELECT
+                    row_id,
+                    "{_column_name("Lead_ID")}" AS lead_id,
+                    "{_column_name("Name")}" AS name,
+                    "{_column_name("Contact Number")}" AS phone,
+                    "{_column_name("Type")}" AS lead_type,
+                    "{_column_name("Location")}" AS location,
+                    "{_column_name("Property Type")}" AS property_type,
+                    "{_column_name("Budget Range")}" AS budget,
+                    "{_column_name("BHK")}" AS bhk,
+                    "{_column_name("Project Name")}" AS society,
+                    "{_column_name("Last Seen")}" AS last_seen,
+                    "{_column_name("First Seen")}" AS created_date,
+                    "{_column_name("Source")}" AS source,
+                    "{_column_name("Raw Message")}" AS raw_message,
+                    "{_column_name("Cleaned Message")}" AS cleaned_message,
+                    "{_column_name("Lead Summary")}" AS lead_summary,
+                    "{_column_name("data_status")}" AS data_status,
+                    "{_column_name("Confidence Score")}" AS confidence_score
+                FROM "{table_name}"
+                {where_sql}
+                ORDER BY COALESCE("{_column_name("Last Seen")}", '') DESC, row_id DESC
+                ''',
+                params,
+            ).fetchall()
+
+        output: list[dict[str, str]] = []
+        for row in rows:
+            record = {key: ("" if row[key] is None else str(row[key])) for key in row.keys()}
+            lead_type = _safe_str(record.get("lead_type", ""))
+            synthetic_lead_id = record.get("lead_id", "") or f'{_STRUCTURED_ONLY_LEAD_PREFIX}{record.get("row_id", "")}'
+            entry_type = "Property" if lead_type == "Seller" else "Requirement" if lead_type == "Buyer" else "Structured Only"
+            output.append(
+                {
+                    "Lead_ID": synthetic_lead_id,
+                    "Name": record.get("name", ""),
+                    "Phone": record.get("phone", ""),
+                    "Entry_Type": entry_type,
+                    "Lead_Type": lead_type,
+                    "Location": record.get("location", ""),
+                    "Property_Type": record.get("property_type", ""),
+                    "Budget": record.get("budget", ""),
+                    "BHK": record.get("bhk", ""),
+                    "Society": record.get("society", ""),
+                    "Landmark": "",
+                    "Last_Seen": record.get("last_seen", ""),
+                    "Created_Date": record.get("created_date", ""),
+                    "Source": record.get("source", ""),
+                    "Broker": record.get("name", ""),
+                    "data_status": record.get("data_status", ""),
+                    "Confidence_Score": record.get("confidence_score", ""),
+                    "retention_period": "",
+                    "retention_until": "",
+                    "Property_Description": record.get("lead_summary") or record.get("cleaned_message") or record.get("raw_message") or "",
+                    "Structured_Only": "TRUE" if synthetic_lead_id.startswith(_STRUCTURED_ONLY_LEAD_PREFIX) else "FALSE",
+                }
+            )
+        return output
+
+    def _search_structured_reference_fallback(
+        self,
+        *,
+        query: str = "",
+        broker: str = "",
+    ) -> list[dict[str, str]]:
+        table_name = _table_name("Structured Data")
+        ref_table = _table_name("Reference Data")
+        query_terms = [term for term in _normalize_search_text(query).split(" ") if term]
+        broker_terms = [term for term in _normalize_search_text(broker).split(" ") if term]
+        if not query_terms and not broker_terms:
+            return []
+
+        where_parts = [f'NOT EXISTS (SELECT 1 FROM "{ref_table}" ref WHERE ref."{_column_name("Lead_ID")}" = s."{_column_name("Lead_ID")}" AND COALESCE(s."{_column_name("Lead_ID")}", \'\') <> \'\')']
+        params: list[Any] = []
+
+        search_fields = [
+            f's."{_column_name("Name")}"',
+            f's."{_column_name("Raw Message")}"',
+            f's."{_column_name("Cleaned Message")}"',
+            f's."{_column_name("Lead Summary")}"',
+            f's."{_column_name("Source")}"',
+            f's."{_column_name("Contact Number")}"',
+            f's."{_column_name("Location")}"',
+            f's."{_column_name("Property Type")}"',
+        ]
+        if query_terms:
+            where_parts.append(
+                "(" + " AND ".join(
+                    [
+                        "(" + " OR ".join([f'LOWER(COALESCE({field}, \'\')) LIKE ?' for field in search_fields]) + ")"
+                        for _ in query_terms
+                    ]
+                ) + ")"
+            )
+            for term in query_terms:
+                params.extend([f"%{term}%"] * len(search_fields))
+        if broker_terms:
+            where_parts.append(
+                "(" + " AND ".join(
+                    [
+                        "(" + " OR ".join([f'LOWER(COALESCE({field}, \'\')) LIKE ?' for field in search_fields]) + ")"
+                        for _ in broker_terms
+                    ]
+                ) + ")"
+            )
+            for term in broker_terms:
+                params.extend([f"%{term}%"] * len(search_fields))
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                f'''
+                SELECT
+                    s.row_id AS row_id,
+                    s."{_column_name("Lead_ID")}" AS lead_id,
+                    s."{_column_name("Name")}" AS name,
+                    s."{_column_name("Contact Number")}" AS phone,
+                    s."{_column_name("Type")}" AS lead_type,
+                    s."{_column_name("Location")}" AS location,
+                    s."{_column_name("Property Type")}" AS property_type,
+                    s."{_column_name("Budget Range")}" AS budget,
+                    s."{_column_name("BHK")}" AS bhk,
+                    s."{_column_name("Project Name")}" AS society,
+                    s."{_column_name("First Seen")}" AS created_date,
+                    s."{_column_name("Last Seen")}" AS last_seen,
+                    s."{_column_name("Source")}" AS source,
+                    s."{_column_name("Raw Message")}" AS raw_message,
+                    s."{_column_name("Cleaned Message")}" AS cleaned_message,
+                    s."{_column_name("Lead Summary")}" AS lead_summary,
+                    s."{_column_name("data_status")}" AS data_status,
+                    s."{_column_name("Confidence Score")}" AS confidence_score
+                FROM "{table_name}" s
+                WHERE {' AND '.join(where_parts)}
+                ORDER BY COALESCE(s."{_column_name("Last Seen")}", '') DESC, row_id DESC
+                ''',
+                params,
+            ).fetchall()
+
+        output: list[dict[str, str]] = []
+        for row in rows:
+            record = {key: ("" if row[key] is None else str(row[key])) for key in row.keys()}
+            name = _safe_str(record.get("name", ""))
+            description = record.get("lead_summary") or record.get("cleaned_message") or record.get("raw_message") or ""
+            synthetic_lead_id = record.get("lead_id", "") or f'{_STRUCTURED_ONLY_LEAD_PREFIX}{record.get("row_id", "")}'
+            output.append(
+                {
+                    "Lead_ID": synthetic_lead_id,
+                    "Name": name,
+                    "Phone": record.get("phone", ""),
+                    "Entry_Type": "Structured Only",
+                    "Lead_Type": record.get("lead_type", ""),
+                    "Location": record.get("location", ""),
+                    "Property_Type": record.get("property_type", ""),
+                    "Budget": record.get("budget", ""),
+                    "BHK": record.get("bhk", ""),
+                    "Society": record.get("society", ""),
+                    "Landmark": "",
+                    "Last_Seen": record.get("last_seen", ""),
+                    "Created_Date": record.get("created_date", ""),
+                    "Source": record.get("source", ""),
+                    "Broker": name,
+                    "data_status": record.get("data_status", ""),
+                    "Confidence_Score": record.get("confidence_score", ""),
+                    "retention_period": "",
+                    "retention_until": "",
+                    "Property_Description": description,
+                    "Structured_Only": "TRUE" if synthetic_lead_id.startswith(_STRUCTURED_ONLY_LEAD_PREFIX) else "FALSE",
+                }
+            )
+        return output
 
     def get_reference_filter_options(self) -> dict[str, list[str]]:
         self.ensure_structure()
