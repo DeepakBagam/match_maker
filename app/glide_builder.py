@@ -3,8 +3,9 @@ from __future__ import annotations
 from threading import Lock
 from datetime import date, datetime, timedelta
 from typing import Any
+import re
 
-from .db_client import DEFAULT_CONFIG, REQUIRED_TABS, _column_name, _table_name
+from .db_client import DEFAULT_CONFIG, REQUIRED_TABS, _STRUCTURED_ONLY_LEAD_PREFIX, _column_name, _table_name
 from .schemas import MATCH_COLUMNS, STRUCTURED_COLUMNS, StructuredLead
 
 GLIDE_CACHE_TTL_SECONDS = 300
@@ -41,6 +42,12 @@ GLIDE_VIEW_COLUMNS = [
     "calc_in_today_view",
     "last_seen_at",
     "updated_at",
+    "confidence_score",
+    "extraction_flags",
+    "first_seen_at",
+    "repeat_count",
+    "source",
+    "project_name",
     "match_1_property_summary",
     "match_1_broker_name",
     "match_1_broker_phone",
@@ -114,6 +121,18 @@ def _normalize_numeric(value: object) -> str:
     except ValueError:
         return ""
     return str(int(number)) if number.is_integer() else f"{number:.2f}".rstrip("0").rstrip(".")
+
+
+def _display_property_type(property_type: object, bhk: object, *texts: object) -> str:
+    normalized = _safe_str(property_type)
+    lowered = normalized.lower()
+    if lowered in {"plot", "land"} and _safe_str(bhk):
+        blob = " ".join(_safe_str(text) for text in texts).lower()
+        if re.search(r"\b(?:bungalow|bunglow|villa|independent house|row house|duplex)\b", blob):
+            return "Villa"
+        if re.search(r"\b(?:flat|apartment)\b", blob):
+            return "Apartment"
+    return normalized
 
 
 def _parse_datetime(value: object) -> datetime | None:
@@ -682,6 +701,12 @@ def _compose_glide_item(
     priority_cutoff = float(filter_config["priority_qualified_score"])
     priority = _priority_label_from_score(priority_score, priority_cutoff)
     match_count = _safe_str(row.get("match_count") or detail.get("match_count", "0")) or "0"
+    display_property_type = _display_property_type(
+        row.get("property_type"),
+        row.get("bhk"),
+        row.get("cleaned_message"),
+        row.get("raw_message"),
+    )
 
     item = {
         "lead_id": _safe_str(row.get("lead_id")),
@@ -690,7 +715,7 @@ def _compose_glide_item(
         "lead_type": _safe_str(row.get("lead_type")),
         "entry_type": "Requirement" if _safe_str(row.get("lead_type")) == "Buyer" else "Property" if _safe_str(row.get("lead_type")) == "Seller" else "",
         "area": _safe_str(row.get("area")),
-        "property_type": _safe_str(row.get("property_type")),
+        "property_type": display_property_type,
         "bhk": _normalize_numeric(row.get("bhk")),
         "budget": _budget_text_from_values(
             {
@@ -721,6 +746,12 @@ def _compose_glide_item(
         "calc_in_today_view": _normalize_bool(_safe_str(row.get("calc_in_today_view")).upper() == "TRUE"),
         "last_seen_at": _safe_str(row.get("last_seen_at")),
         "updated_at": _safe_str(row.get("updated_at")) or _safe_str(row.get("last_seen_at")),
+        "confidence_score": _normalize_numeric(row.get("confidence_score")),
+        "extraction_flags": _safe_str(row.get("extraction_flags")),
+        "first_seen_at": _safe_str(row.get("first_seen_at")),
+        "repeat_count": _normalize_numeric(row.get("repeat_count")),
+        "source": _safe_str(row.get("source")),
+        "project_name": _safe_str(row.get("project_name")),
         "match_1_property_summary": detail.get("match_1_property_summary", ""),
         "match_1_broker_name": detail.get("match_1_broker_name", ""),
         "match_1_broker_phone": detail.get("match_1_broker_phone", ""),
@@ -767,8 +798,17 @@ def _fetch_glide_base_rows_sql(
         where_parts.append(f'COALESCE(base_structured."{_column_name("Type")}", \'\') = ?')
         params.append(normalized_lead_type)
     if normalized_property_type:
-        where_parts.append(f'LOWER(COALESCE(base_structured."{_column_name("Property Type")}", \'\')) LIKE ?')
-        params.append(f"%{normalized_property_type}%")
+        where_parts.append(
+            "("
+            + " OR ".join(
+                [
+                    f'LOWER(COALESCE(base_structured."{_column_name("Property Type")}", \'\')) LIKE ?',
+                    f'LOWER(COALESCE(base_structured."{_column_name("BHK")}", \'\')) LIKE ?',
+                ]
+            )
+            + ")"
+        )
+        params.extend([f"%{normalized_property_type}%", f"%{normalized_property_type}%"])
     if from_date:
         where_parts.append(f'{parts["activity_date"]} >= ?')
         params.append(from_date.isoformat())
@@ -782,7 +822,9 @@ def _fetch_glide_base_rows_sql(
             f'LOWER(COALESCE(base_structured."{_column_name("Type")}", \'\')) LIKE ?',
             f'LOWER(COALESCE(base_structured."{_column_name("Location")}", \'\')) LIKE ?',
             f'LOWER(COALESCE(base_structured."{_column_name("Property Type")}", \'\')) LIKE ?',
+            f'LOWER(COALESCE(base_structured."{_column_name("BHK")}", \'\')) LIKE ?',
             f'LOWER(COALESCE(base_structured."{_column_name("Transaction Type")}", \'\')) LIKE ?',
+            f'LOWER(COALESCE(base_structured."{_column_name("Project_Name")}", \'\')) LIKE ?',
             f'''EXISTS (
                 SELECT 1
                 FROM "{parts["matches_table"]}" AS match_search
@@ -796,7 +838,7 @@ def _fetch_glide_base_rows_sql(
             )''',
         ]
         where_parts.append("(" + " OR ".join(search_columns) + ")")
-        params.extend([like_term] * 8)
+        params.extend([like_term] * 10)
 
     where_sql = " AND ".join(where_parts)
     latest_execution_cte = f'''
@@ -855,6 +897,12 @@ def _fetch_glide_base_rows_sql(
                 COALESCE(match_counts.match_count, 0) AS match_count,
                 base_structured."{_column_name("Date")}" AS lead_date_raw,
                 base_structured."{_column_name("Last Seen")}" AS last_seen_at,
+                base_structured."{_column_name("First Seen")}" AS first_seen_at,
+                base_structured."{_column_name("Repeat Count")}" AS repeat_count,
+                base_structured."{_column_name("Confidence Score")}" AS confidence_score,
+                base_structured."{_column_name("Extraction Flags")}" AS extraction_flags,
+                base_structured."{_column_name("Source")}" AS source,
+                base_structured."{_column_name("Project_Name")}" AS project_name,
                 base_structured."{_column_name("Cleaned Message")}" AS cleaned_message,
                 base_structured."{_column_name("Raw Message")}" AS raw_message,
                 COALESCE(latest_execution.status, '') AS status,
@@ -917,6 +965,12 @@ def _fetch_glide_base_rows_sql(
         "match_count",
         "lead_date_raw",
         "last_seen_at",
+        "first_seen_at",
+        "repeat_count",
+        "confidence_score",
+        "extraction_flags",
+        "source",
+        "project_name",
         "cleaned_message",
         "raw_message",
         "status",
@@ -1011,6 +1065,12 @@ def _load_glide_lead_detail_sql(client, lead_id: str, *, now: datetime) -> dict[
             COALESCE(match_counts.match_count, 0) AS match_count,
             base_structured."{_column_name("Date")}" AS lead_date_raw,
             base_structured."{_column_name("Last Seen")}" AS last_seen_at,
+            base_structured."{_column_name("First Seen")}" AS first_seen_at,
+            base_structured."{_column_name("Repeat Count")}" AS repeat_count,
+            base_structured."{_column_name("Confidence Score")}" AS confidence_score,
+            base_structured."{_column_name("Extraction Flags")}" AS extraction_flags,
+            base_structured."{_column_name("Source")}" AS source,
+            base_structured."{_column_name("Project_Name")}" AS project_name,
             base_structured."{_column_name("Cleaned Message")}" AS cleaned_message,
             base_structured."{_column_name("Raw Message")}" AS raw_message,
             COALESCE(latest_execution.status, '') AS status,
@@ -1062,6 +1122,12 @@ def _load_glide_lead_detail_sql(client, lead_id: str, *, now: datetime) -> dict[
         "match_count",
         "lead_date_raw",
         "last_seen_at",
+        "first_seen_at",
+        "repeat_count",
+        "confidence_score",
+        "extraction_flags",
+        "source",
+        "project_name",
         "cleaned_message",
         "raw_message",
         "status",
@@ -1114,7 +1180,11 @@ def _search_blob(item: dict[str, str]) -> str:
         item.get("lead_type", ""),
         item.get("entry_type", ""),
         item.get("area", ""),
+        item.get("property_type", ""),
+        item.get("bhk", ""),
         item.get("transaction_type", ""),
+        item.get("project_name", ""),
+        item.get("source", ""),
         item.get("match_1_broker_name", ""),
         item.get("match_2_broker_name", ""),
         item.get("match_3_broker_name", ""),
@@ -1164,7 +1234,12 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
                 "lead_type": lead_type,
                 "entry_type": "Requirement" if lead_type == "Buyer" else "Property" if lead_type == "Seller" else "",
                 "area": _safe_str(lead.values.get("Location")),
-                "property_type": _safe_str(lead.values.get("Property Type")),
+                "property_type": _display_property_type(
+                    lead.values.get("Property Type"),
+                    lead.values.get("BHK"),
+                    lead.values.get("Cleaned Message"),
+                    lead.values.get("Raw Message"),
+                ),
                 "bhk": _normalize_numeric(lead.values.get("BHK")),
                 "budget": _budget_text(lead),
                 "transaction_type": _safe_str(lead.values.get("Transaction Type")),
@@ -1189,6 +1264,12 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
                 "calc_in_today_view": "FALSE",
                 "last_seen_at": last_seen_at,
                 "updated_at": _safe_str(execution.get("Updated At", "")) or last_seen_at,
+                "confidence_score": _normalize_numeric(lead.values.get("Confidence Score")),
+                "extraction_flags": _safe_str(lead.values.get("Extraction Flags")),
+                "first_seen_at": _safe_str(lead.values.get("First Seen")),
+                "repeat_count": _normalize_numeric(lead.values.get("Repeat Count")),
+                "source": _safe_str(lead.values.get("Source")),
+                "project_name": _safe_str(lead.values.get("Project_Name")),
                 "match_1_property_summary": detail["match_1_property_summary"],
                 "match_1_broker_name": detail["match_1_broker_name"],
                 "match_1_broker_phone": detail["match_1_broker_phone"],
@@ -1229,7 +1310,12 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
             "lead_type": lead_type,
             "entry_type": "Requirement" if lead_type == "Buyer" else "Property" if lead_type == "Seller" else "",
             "area": _safe_str(lead_values.get("Location")),
-            "property_type": _safe_str(lead_values.get("Property Type")),
+            "property_type": _display_property_type(
+                lead_values.get("Property Type"),
+                lead_values.get("BHK"),
+                lead_values.get("Cleaned Message"),
+                lead_values.get("Raw Message"),
+            ),
             "bhk": _normalize_numeric(lead_values.get("BHK")),
             "budget": _budget_text_from_values(lead_values),
             "transaction_type": _safe_str(lead_values.get("Transaction Type")),
@@ -1254,6 +1340,12 @@ def build_glide_view(client, *, now: datetime | None = None) -> list[dict[str, s
             "calc_in_today_view": "FALSE",
             "last_seen_at": last_seen_at,
             "updated_at": _safe_str(execution.get("Updated At", "")) or last_seen_at,
+            "confidence_score": _normalize_numeric(lead_values.get("Confidence Score")),
+            "extraction_flags": _safe_str(lead_values.get("Extraction Flags")),
+            "first_seen_at": _safe_str(lead_values.get("First Seen")),
+            "repeat_count": _normalize_numeric(lead_values.get("Repeat Count")),
+            "source": _safe_str(lead_values.get("Source")),
+            "project_name": _safe_str(lead_values.get("Project_Name")),
             **detail,
         }
         item["calc_in_today_view"] = _normalize_bool(_lead_in_today_view(item, now, filter_config))
@@ -1322,6 +1414,7 @@ def get_glide_view_dataset(
             item
             for item in items
             if normalized_property_type in _safe_str(item.get("property_type", "")).lower()
+            or normalized_property_type in _safe_str(item.get("bhk", "")).lower()
         ]
     if from_date or to_date:
         filtered_items: list[dict[str, str]] = []
@@ -1360,12 +1453,85 @@ def get_glide_view_dataset(
 
 
 def get_glide_lead_detail(client, lead_id: str, *, now: datetime | None = None) -> dict[str, str] | None:
+    if lead_id.startswith(_STRUCTURED_ONLY_LEAD_PREFIX):
+        return _load_structured_only_lead_detail(client, lead_id)
     if hasattr(client, "_connect"):
         return _load_glide_lead_detail_sql(client, lead_id, now=now or datetime.now())
     for item in _cached_glide_rows(client, now=now):
         if item["lead_id"] == lead_id:
             return item
     return None
+
+
+def _load_structured_only_lead_detail(client, lead_id: str) -> dict[str, str] | None:
+    if not hasattr(client, "_connect"):
+        return None
+    row_id = lead_id.removeprefix(_STRUCTURED_ONLY_LEAD_PREFIX).strip()
+    if not row_id.isdigit():
+        return None
+
+    table_name = _table_name("Structured Data")
+    with client._connect() as connection:
+        row = connection.execute(f'SELECT * FROM "{table_name}" WHERE row_id = ?', [int(row_id)]).fetchone()
+    if not row:
+        return None
+
+    values = dict(row)
+    property_type = _display_property_type(
+        values.get(_column_name("Property Type")),
+        values.get(_column_name("BHK")),
+        values.get(_column_name("Cleaned Message")),
+        values.get(_column_name("Raw Message")),
+    )
+    return {
+        "lead_id": lead_id,
+        "name": _safe_str(values.get(_column_name("Name"))),
+        "phone": _safe_str(values.get(_column_name("Contact Number"))),
+        "lead_type": _safe_str(values.get(_column_name("Type"))),
+        "entry_type": "Structured Only",
+        "area": _safe_str(values.get(_column_name("Location"))),
+        "property_type": property_type,
+        "bhk": _normalize_numeric(values.get(_column_name("BHK"))),
+        "budget": _safe_str(values.get(_column_name("Budget Range"))),
+        "transaction_type": _safe_str(values.get(_column_name("Transaction Type"))),
+        "priority": "SEARCH ONLY",
+        "match_count": "",
+        "strength": "Not available",
+        "last_interaction_date": "-",
+        "best_match_summary": "Structured-only search result.",
+        "match_reason": "This row exists in Structured Data but is not a live Glide lead with match computation.",
+        "lead_date": _normalize_date(values.get(_column_name("Last Seen")) or values.get(_column_name("Date"))),
+        "cleaned_message": _safe_str(values.get(_column_name("Cleaned Message"))),
+        "raw_message": _safe_str(values.get(_column_name("Raw Message"))),
+        "status": "",
+        "notes": "",
+        "next_follow_up": "",
+        "next_action": "",
+        "timing": "",
+        "calc_active_within_120_days": "FALSE",
+        "calc_follow_up_pending": "FALSE",
+        "calc_priority_qualified": "FALSE",
+        "calc_recent_interaction": "FALSE",
+        "calc_in_today_view": "FALSE",
+        "last_seen_at": _safe_str(values.get(_column_name("Last Seen"))),
+        "updated_at": _safe_str(values.get(_column_name("Last Seen"))),
+        "confidence_score": _normalize_numeric(values.get(_column_name("Confidence Score"))),
+        "extraction_flags": _safe_str(values.get(_column_name("Extraction Flags"))),
+        "first_seen_at": _safe_str(values.get(_column_name("First Seen"))),
+        "repeat_count": _normalize_numeric(values.get(_column_name("Repeat Count"))),
+        "source": _safe_str(values.get(_column_name("Source"))),
+        "project_name": _safe_str(values.get(_column_name("Project_Name"))),
+        "match_1_property_summary": "",
+        "match_1_broker_name": "",
+        "match_1_broker_phone": "",
+        "match_2_property_summary": "",
+        "match_2_broker_name": "",
+        "match_2_broker_phone": "",
+        "match_3_property_summary": "",
+        "match_3_broker_name": "",
+        "match_3_broker_phone": "",
+        "structured_only": "TRUE",
+    }
 
 
 def get_glide_readiness(client) -> dict[str, Any]:

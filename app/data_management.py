@@ -63,6 +63,10 @@ def get_structured_dataset(
     to_date: date | None = None,
     limit: int = 200,
     offset: int = 0,
+    search: str = "",
+    column_filters: dict[str, str] | None = None,
+    sort_column: str = "",
+    sort_direction: str = "desc",
 ) -> dict[str, Any]:
     payload = client.get_table_page(
         tab,
@@ -70,11 +74,19 @@ def get_structured_dataset(
         offset=offset,
         from_date=from_date.isoformat() if from_date else None,
         to_date=to_date.isoformat() if to_date else None,
+        search=search,
+        column_filters=column_filters,
+        sort_column=sort_column,
+        sort_direction=sort_direction,
     )
     payload["tab"] = tab
     payload["filters"] = {
         "from_date": from_date.isoformat() if from_date else None,
         "to_date": to_date.isoformat() if to_date else None,
+        "search": search.strip(),
+        "column_filters": {str(key): str(value).strip() for key, value in (column_filters or {}).items() if str(value).strip()},
+        "sort_column": sort_column.strip(),
+        "sort_direction": sort_direction.strip().lower() or "desc",
     }
     return payload
 
