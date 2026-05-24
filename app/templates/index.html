@@ -1342,6 +1342,7 @@
       activeFilterColumn: "",
       activeFilterSelectionStart: null,
       activeFilterSelectionEnd: null,
+      filterReloadHandle: null,
       tab: "Structured Data",
       fromDate: "",
       toDate: "",
@@ -2048,12 +2049,27 @@
               </div>
               <div class="flex flex-col items-start gap-2 md:items-end">
                 <a class="inline-flex rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#B35D29]" href="tel:${escapeAttribute(normalizePhone(row.Phone || "", true)) || "#"}">${escapeHtml(row.Phone || "No phone")}</a>
+                ${row.Lead_ID ? `<button class="reference-open-btn inline-flex rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" data-lead-id="${escapeAttribute(row.Lead_ID)}" type="button">Open</button>` : ""}
                 ${lastSeen ? `<span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">Last seen ${escapeHtml(lastSeen)}</span>` : ""}
               </div>
             </div>
           </article>
         `;
       }).join("");
+      container.querySelectorAll(".reference-open-btn").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const leadId = button.dataset.leadId || "";
+          if (!leadId) {
+            return;
+          }
+          try {
+            await loadGlideLeadDetail(leadId);
+            setGlideStatus("Reference lead opened.", "success");
+          } catch (error) {
+            setGlideStatus(error instanceof Error ? error.message : "Failed to open reference lead.", "error");
+          }
+        });
+      });
     }
 
     async function loadReferenceFilterOptions() {
@@ -2325,7 +2341,6 @@
       const prevPageBtn = document.getElementById("prevPageBtn");
       const nextPageBtn = document.getElementById("nextPageBtn");
       const visibleColumns = getVisibleColumns(columns);
-      const filteredRows = getFilteredRows(rows, visibleColumns);
 
       countBadge.textContent = `${payload.row_count || 0} rows`;
       dataState.totalRows = payload.row_count || 0;
@@ -2335,7 +2350,7 @@
       pageBadge.textContent = `Page ${Math.floor((payload.offset || 0) / (payload.page_size || dataState.pageSize)) + 1}`;
       const startRow = (payload.offset || 0) + (rows.length ? 1 : 0);
       const endRow = (payload.offset || 0) + rows.length;
-      pageMeta.textContent = `Showing ${startRow} to ${endRow} of ${payload.row_count || 0} rows | ${filteredRows.length} visible on this page`;
+      pageMeta.textContent = `Showing ${startRow} to ${endRow} of ${payload.row_count || 0} rows`;
       prevPageBtn.disabled = (payload.offset || 0) === 0;
       nextPageBtn.disabled = (payload.offset || 0) + rows.length >= (payload.row_count || 0);
 
@@ -2377,8 +2392,8 @@
         </thead>
       `;
 
-      const tbodyRows = filteredRows.length
-        ? filteredRows.map((row, rowIndex) => `
+      const tbodyRows = rows.length
+        ? rows.map((row, rowIndex) => `
             <tr class="${rowIndex % 2 === 0 ? "bg-white" : "bg-[#FFFCFA]"}">
               <td class="sticky left-0 border-b border-r border-grid bg-inherit px-4 py-3 align-top font-mono text-xs font-semibold leading-5 text-[#6A5446]">${payload.offset + rowIndex + 1}</td>
               ${visibleColumns.map((column, columnIndex) => `<td class="data-cell min-w-[180px] max-w-[520px] whitespace-pre-wrap break-words border-b border-r border-grid px-4 py-3 align-top font-mono text-xs leading-5 text-[#3F3128] last:border-r-0" data-row-index="${rowIndex}" data-col-index="${columnIndex}" tabindex="-1">${escapeHtml(row[column] ?? "")}</td>`).join("")}
@@ -2393,7 +2408,8 @@
           dataState.activeFilterColumn = event.target.dataset.column || "";
           dataState.activeFilterSelectionStart = event.target.selectionStart;
           dataState.activeFilterSelectionEnd = event.target.selectionEnd;
-          renderDataTable(dataState.lastPayload || payload);
+          dataState.offset = 0;
+          scheduleDataFilterReload();
         });
         input.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
@@ -2402,6 +2418,8 @@
             dataState.activeFilterColumn = event.target.dataset.column || "";
             dataState.activeFilterSelectionStart = event.target.selectionStart;
             dataState.activeFilterSelectionEnd = event.target.selectionEnd;
+            dataState.offset = 0;
+            loadData();
           }
         });
       });
@@ -2424,6 +2442,9 @@
       query.set("tab", dataState.tab);
       query.set("limit", String(dataState.pageSize));
       query.set("offset", String(dataState.offset));
+      if (Object.values(dataState.columnFilters).some((value) => String(value || "").trim())) {
+        query.set("column_filters", JSON.stringify(dataState.columnFilters));
+      }
       if (dataState.fromDate) {
         query.set("from_date", dataState.fromDate);
       }
@@ -2457,6 +2478,15 @@
       dataState.lastPayload = body;
       setDataStatus(`Loaded ${body.tab || dataState.tab} from the database. Use the filter row under the headers for column-wise filtering.`, "success");
       renderDataTable(body);
+    }
+
+    function scheduleDataFilterReload() {
+      if (dataState.filterReloadHandle) {
+        window.clearTimeout(dataState.filterReloadHandle);
+      }
+      dataState.filterReloadHandle = window.setTimeout(() => {
+        loadData();
+      }, 250);
     }
 
     async function syncDataStore() {

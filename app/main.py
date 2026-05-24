@@ -673,6 +673,7 @@ def get_data(
     to_date: str | None = None,
     limit: int = 200,
     offset: int = 0,
+    column_filters: str = "",
 ):
     try:
         parsed_from = parse_optional_date(from_date)
@@ -690,6 +691,20 @@ def get_data(
     except Exception as exc:
         raise _translate_ingest_error(exc) from exc
 
+    parsed_column_filters: dict[str, str] = {}
+    if column_filters.strip():
+        try:
+            raw_filters = json.loads(column_filters)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail="column_filters must be valid JSON") from exc
+        if not isinstance(raw_filters, dict):
+            raise HTTPException(status_code=400, detail="column_filters must be a JSON object")
+        parsed_column_filters = {
+            str(key): str(value)
+            for key, value in raw_filters.items()
+            if str(value).strip()
+        }
+
     payload = get_structured_dataset(
         client,
         tab=tab,
@@ -697,6 +712,7 @@ def get_data(
         to_date=parsed_to,
         limit=limit,
         offset=offset,
+        column_filters=parsed_column_filters,
     )
     payload["available_tabs"] = list(REQUIRED_TABS.keys())
     return payload

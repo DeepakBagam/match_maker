@@ -13,6 +13,12 @@ from .schemas import StructuredLead
 
 _MAX_MATCHES_PER_BUYER = 25
 _BUDGET_BAND_SIZE = 1_000_000.0
+_PROPERTY_FAMILIES = {
+    "apartment": {"flat", "apartment", "residential apartment"},
+    "villa": {"villa", "bungalow", "independent house", "row house", "duplex"},
+    "land": {"plot", "land"},
+    "commercial": {"office", "commercial", "shop", "showroom", "warehouse", "industrial"},
+}
 
 
 @dataclass(frozen=True)
@@ -38,6 +44,7 @@ class _SellerBucket:
     sellers: list[_PreparedLead] = field(default_factory=list)
     by_budget_band: dict[int, list[_PreparedLead]] = field(default_factory=lambda: defaultdict(list))
     by_bhk: dict[object, list[_PreparedLead]] = field(default_factory=lambda: defaultdict(list))
+    by_property_type: dict[str, list[_PreparedLead]] = field(default_factory=lambda: defaultdict(list))
 
 
 def _budget_band_keys(budget_min: float, budget_max: float) -> tuple[int, ...]:
@@ -109,14 +116,46 @@ def _seller_bucket_key(lead: _PreparedLead) -> tuple[str, str, str]:
     return (lead.transaction, lead.location, lead.property_type)
 
 
-def _build_seller_buckets(sellers: list[_PreparedLead]) -> dict[tuple[str, str, str], _SellerBucket]:
-    buckets: dict[tuple[str, str, str], _SellerBucket] = {}
+def _seller_location_key(lead: _PreparedLead) -> tuple[str, str]:
+    return (lead.transaction, lead.location)
+
+
+def _normalize_property_type(value: object) -> str:
+    return str(value or "").strip().lower()
+
+
+def _property_family(value: object) -> str:
+    normalized = _normalize_property_type(value)
+    if not normalized:
+        return ""
+    for family, members in _PROPERTY_FAMILIES.items():
+        if normalized in members:
+            return family
+    return normalized
+
+
+def _property_match_score(buyer_property: object, seller_property: object) -> float:
+    buyer_normalized = _normalize_property_type(buyer_property)
+    seller_normalized = _normalize_property_type(seller_property)
+    if buyer_normalized and seller_normalized and buyer_normalized == seller_normalized:
+        return 1.0
+    if not buyer_normalized or not seller_normalized:
+        return 0.35
+    if _property_family(buyer_normalized) == _property_family(seller_normalized):
+        return 0.75
+    return 0.0
+
+
+def _build_seller_buckets(sellers: list[_PreparedLead]) -> dict[tuple[str, str], _SellerBucket]:
+    buckets: dict[tuple[str, str], _SellerBucket] = {}
     for seller in sellers:
-        if not seller.transaction or not seller.location or not seller.property_type:
+        if not seller.transaction or not seller.location:
             continue
-        key = _seller_bucket_key(seller)
+        key = _seller_location_key(seller)
         bucket = buckets.setdefault(key, _SellerBucket())
         bucket.sellers.append(seller)
+        if seller.property_type:
+            bucket.by_property_type[_normalize_property_type(seller.property_type)].append(seller)
         if seller.bhk is not None:
             bucket.by_bhk[seller.bhk].append(seller)
         for band in _budget_band_keys(seller.budget_min, seller.budget_max):
@@ -126,23 +165,30 @@ def _build_seller_buckets(sellers: list[_PreparedLead]) -> dict[tuple[str, str, 
 
 def _candidate_sellers_for_buyer(
     buyer: _PreparedLead,
-    seller_buckets: dict[tuple[str, str, str], _SellerBucket],
+    seller_buckets: dict[tuple[str, str], _SellerBucket],
 ) -> list[_PreparedLead]:
-    if not buyer.transaction or not buyer.location or not buyer.property_type:
+    if not buyer.transaction or not buyer.location:
         return []
 
-    bucket = seller_buckets.get(_seller_bucket_key(buyer))
+    bucket = seller_buckets.get(_seller_location_key(buyer))
     if not bucket:
         return []
 
+    exact_property_sellers = bucket.by_property_type.get(_normalize_property_type(buyer.property_type), [])
+    if exact_property_sellers:
+        bucket_sellers = exact_property_sellers
+    else:
+        compatible_sellers = [
+            seller
+            for seller in bucket.sellers
+            if _property_match_score(buyer.property_type, seller.property_type) > 0.0
+        ]
+        bucket_sellers = compatible_sellers or bucket.sellers
+
     if buyer.bhk is not None:
-        bhk_sellers = bucket.by_bhk.get(buyer.bhk)
+        bhk_sellers = [seller for seller in bucket_sellers if seller.bhk == buyer.bhk]
         if bhk_sellers:
             bucket_sellers = bhk_sellers
-        else:
-            bucket_sellers = bucket.sellers
-    else:
-        bucket_sellers = bucket.sellers
 
     budget_bands = _budget_band_keys(buyer.budget_min, buyer.budget_max)
     if not budget_bands:
@@ -203,6 +249,9 @@ def compute_matches(leads: list[StructuredLead], weights: dict[str, float], thre
         top_matches: list[tuple[float, str, str, str, float, float, float, int, _PreparedLead]] = []
 
         for seller_index, seller in enumerate(candidate_sellers):
+            property_score = _property_match_score(buyer.property_type, seller.property_type)
+            if property_score <= 0.0:
+                continue
             bhk_score = 1.0 if buyer.bhk and seller.bhk and buyer.bhk == seller.bhk else 0.0
             budget_score = (
                 _budget_overlap(buyer.budget_min, buyer.budget_max, seller.budget_min, seller.budget_max)
@@ -211,11 +260,11 @@ def compute_matches(leads: list[StructuredLead], weights: dict[str, float], thre
             )
             pair_recency = (buyer.recency + seller.recency) / 2
             final_score = (
-                w_loc
-                + w_prop
+                (1.0 * w_loc)
+                + (property_score * w_prop)
                 + (bhk_score * w_bhk)
                 + (budget_score * w_budget)
-                + w_txn
+                + (1.0 * w_txn)
                 + buyer_static_bonus
                 + seller_static_bonus[seller.lead_id]
             ) / total_w * 100
@@ -244,7 +293,10 @@ def compute_matches(leads: list[StructuredLead], weights: dict[str, float], thre
 
         top_matches.sort(key=lambda item: item[0], reverse=True)
         for final_score, _seller_id, _seller_phone, _seller_name, bhk_score, budget_score, pair_recency, _seller_index, seller in top_matches:
+            property_score = _property_match_score(buyer.property_type, seller.property_type)
             reason_parts = [f"Location: {buyer.location}", f"Property: {buyer.property_type}", f"Transaction: {buyer.transaction}"]
+            if property_score < 1.0 and seller.property_type:
+                reason_parts.append(f"Related property type: {seller.property_type}")
             if bhk_score == 1.0:
                 reason_parts.append(f"BHK: {buyer.bhk}")
             if budget_score > 0.0:

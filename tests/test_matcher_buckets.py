@@ -52,6 +52,23 @@ def test_compute_matches_uses_exact_bucket_keys():
     assert matches[0]["Seller Lead_ID"] == "seller-1"
 
 
+def test_compute_matches_allows_related_property_types_in_same_location_and_transaction():
+    buyer = _lead("buyer-1", "Buyer", location="Koregaon Park", property_type="Flat")
+    related_seller = _lead("seller-1", "Seller", location="Koregaon Park", property_type="Apartment")
+    incompatible_seller = _lead("seller-2", "Seller", location="Koregaon Park", property_type="Office")
+
+    matches = compute_matches(
+        [buyer, related_seller, incompatible_seller],
+        weights={},
+        threshold=40,
+        now=datetime(2026, 5, 14, 12, 0, 0),
+    )
+
+    assert len(matches) == 1
+    assert matches[0]["Seller Lead_ID"] == "seller-1"
+    assert "Related property type: Apartment" in str(matches[0]["Match Reason"])
+
+
 def test_compute_matches_budget_band_limits_candidates_without_losing_overlap_match():
     buyer = _lead("buyer-1", "Buyer", location="Kharadi", property_type="Flat", budget_min=4500000, budget_max=5500000)
     near_budget = _lead("seller-1", "Seller", location="Kharadi", property_type="Flat", budget_min=5000000, budget_max=5200000)
