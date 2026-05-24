@@ -39,6 +39,13 @@ _LANDMARK_PATTERNS = (
     r"\bbeside\s+([a-z0-9][a-z0-9\s\-]{2,40})",
     r"\bbehind\s+([a-z0-9][a-z0-9\s\-]{2,40})",
 )
+_BROKER_CONTACT_RE = re.compile(r"([a-z][a-z\s.'&/-]{1,40})\s+(?:\+?91[-\s]?)?\d{10}\b", re.IGNORECASE)
+_BROKER_COMPANY_RE = re.compile(
+    r"([a-z][a-z0-9\s.'&/-]{2,60}(?:realty|real estate|properties|property|estate|associates|group|realtor|brokers?))",
+    re.IGNORECASE,
+)
+_BROKER_IGNORE_RE = re.compile(r"\b(?:call to view|to view|please dm|call|contact|reach|whatsapp|wa|rent|sale)\b", re.IGNORECASE)
+_BROKER_CONTACT_NOISE_RE = re.compile(r"\b(?:car|park|price|lakh|lac|cr|crore|sqft|flat|office|shop|showroom|plot|villa|bungalow)\b", re.IGNORECASE)
 
 
 def _safe_str(value: object) -> str:
@@ -105,6 +112,53 @@ def _normalize_broker_name(value: object) -> str:
                      "", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.-")
     return cleaned
+
+
+def _title_preserve_short_tokens(value: str) -> str:
+    words = []
+    for token in re.split(r"(\s+|/)", value):
+        if not token or token.isspace() or token == "/":
+            words.append(token)
+            continue
+        words.append(token if token.isupper() and len(token) <= 4 else token.title())
+    return "".join(words).strip(" ,.-/")
+
+
+def _extract_broker_names(*values: object) -> str:
+    raw_candidates: list[str] = []
+    for index, value in enumerate(values):
+        text = _safe_str(value)
+        if not text:
+            continue
+        lines = [line.strip() for line in str(text).splitlines() if line.strip()]
+        for line in lines:
+            if any(ch.isdigit() for ch in line):
+                for match in _BROKER_CONTACT_RE.finditer(line):
+                    candidate = re.sub(r"\s+", " ", match.group(1)).strip(" *|,.-")
+                    if (
+                        candidate
+                        and len(candidate.split()) <= 3
+                        and not _BROKER_IGNORE_RE.search(candidate)
+                        and not _BROKER_CONTACT_NOISE_RE.search(candidate)
+                    ):
+                        raw_candidates.append(candidate)
+                continue
+            if index == 0:
+                for match in _BROKER_COMPANY_RE.finditer(line):
+                    candidate = re.sub(r"\s+", " ", match.group(1)).strip(" *|,.-")
+                    if candidate and not _BROKER_IGNORE_RE.search(candidate):
+                        raw_candidates.append(candidate)
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for candidate in raw_candidates:
+        cleaned = _title_preserve_short_tokens(candidate.replace("’", "'"))
+        key = cleaned.lower()
+        if not cleaned or key in seen or cleaned.lower() == "to view":
+            continue
+        seen.add(key)
+        normalized.append(cleaned)
+    return " | ".join(normalized)
 
 
 def _extract_landmark(*values: object) -> str:
@@ -197,7 +251,11 @@ def build_reference_rows(
                 last_seen_at.isoformat(sep=" ", timespec="seconds") if last_seen_at else "",
                 created_date,
                 _safe_str(lead.values.get("Source")),
-                _normalize_broker_name(lead.values.get("Name")),
+                _extract_broker_names(
+                    lead.values.get("Raw Message"),
+                    lead.values.get("Cleaned Message"),
+                    lead.values.get("Name"),
+                ) or _normalize_broker_name(lead.values.get("Name")),
                 _safe_str(lead.values.get("data_status")).upper() or "RAW",
                 confidence_score,
                 str(retention_period),
