@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -144,7 +145,7 @@ DEFAULT_WEIGHTS = {
 }
 
 
-class _PostgresRow:
+class _PostgresRow(Mapping[str, Any]):
     def __init__(self, payload: dict[str, Any]) -> None:
         self._payload = payload
         self._values = list(payload.values())
@@ -153,6 +154,27 @@ class _PostgresRow:
         if isinstance(key, int):
             return self._values[key]
         return self._payload[key]
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._payload)
+
+    def __len__(self) -> int:
+        return len(self._payload)
+
+    def keys(self):
+        return self._payload.keys()
+
+    def items(self):
+        return self._payload.items()
+
+    def values(self):
+        return self._payload.values()
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._payload.get(key, default)
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._payload
 
 
 class _PostgresCursor:
@@ -570,6 +592,66 @@ class DatabaseClient:
             connection.execute(
                 f'CREATE INDEX IF NOT EXISTS "idx_{reference_table}_{name}" '
                 f'ON "{reference_table}" ("{_column_name(column)}")'
+            )
+        if self.is_postgres:
+            self._ensure_postgres_search_indexes(connection, structured_table, reference_table)
+
+    def _ensure_postgres_search_indexes(self, connection: sqlite3.Connection, structured_table: str, reference_table: str) -> None:
+        try:
+            connection.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+        except Exception:
+            return
+
+        def field(column: str) -> str:
+            return f'"{_column_name(column)}"'
+
+        for table_name, name, expression in (
+            (
+                structured_table,
+                "search_blob",
+                "LOWER("
+                + " || ' ' || ".join(
+                    f"COALESCE({field(column)}, '')"
+                    for column in (
+                        "Name",
+                        "Contact Number",
+                        "Location",
+                        "Property Type",
+                        "BHK",
+                        "Project Name",
+                        "Source",
+                        "Raw Message",
+                        "Cleaned Message",
+                        "Lead Summary",
+                    )
+                )
+                + ")",
+            ),
+            (
+                reference_table,
+                "search_blob",
+                "LOWER("
+                + " || ' ' || ".join(
+                    f"COALESCE({field(column)}, '')"
+                    for column in (
+                        "Name",
+                        "Phone",
+                        "Location",
+                        "Property_Type",
+                        "BHK",
+                        "Budget",
+                        "Broker",
+                        "Society",
+                        "Landmark",
+                        "Source",
+                    )
+                )
+                + ")",
+            ),
+        ):
+            connection.execute(
+                f'CREATE INDEX IF NOT EXISTS "idx_{table_name}_{name}_trgm" '
+                f'ON "{table_name}" USING GIN ({expression} gin_trgm_ops)'
             )
 
     def get_table(self, tab: str) -> list[list[str]]:

@@ -879,7 +879,15 @@ def _fetch_glide_base_rows_sql(
             GROUP BY lead_id
         )
     '''
-    base_cte = f'''
+
+    def build_base_cte(*, include_match_counts: bool) -> str:
+        match_count_select = "COALESCE(match_counts.match_count, 0)" if include_match_counts else "0"
+        match_count_join = (
+            f'LEFT JOIN match_counts ON match_counts.lead_id = base_structured."{_column_name("Lead_ID")}"'
+            if include_match_counts
+            else ""
+        )
+        return f'''
         base_rows AS (
             SELECT
                 base_structured."{_column_name("Lead_ID")}" AS lead_id,
@@ -894,7 +902,7 @@ def _fetch_glide_base_rows_sql(
                 base_structured."{_column_name("Budget Range")}" AS budget_range,
                 base_structured."{_column_name("Transaction Type")}" AS transaction_type,
                 {parts["priority_score"]} AS priority_score,
-                COALESCE(match_counts.match_count, 0) AS match_count,
+                {match_count_select} AS match_count,
                 base_structured."{_column_name("Date")}" AS lead_date_raw,
                 base_structured."{_column_name("Last Seen")}" AS last_seen_at,
                 base_structured."{_column_name("First Seen")}" AS first_seen_at,
@@ -920,11 +928,11 @@ def _fetch_glide_base_rows_sql(
                 {parts["priority_rank"]} AS priority_rank
             FROM "{parts["structured_table"]}" AS base_structured
             LEFT JOIN latest_execution ON latest_execution.lead_id = base_structured."{_column_name("Lead_ID")}"
-            LEFT JOIN match_counts ON match_counts.lead_id = base_structured."{_column_name("Lead_ID")}"
+            {match_count_join}
             WHERE {where_sql}
         )
     '''
-    ctes = ",\n".join([latest_execution_cte, match_counts_cte, base_cte])
+
     base_params = [
         parts["activity_cutoff"],
         parts["recent_cutoff"],
@@ -936,9 +944,11 @@ def _fetch_glide_base_rows_sql(
         *params,
     ]
 
-    count_sql = f"WITH {ctes} SELECT COUNT(*) AS row_count FROM base_rows"
+    count_ctes = ",\n".join([latest_execution_cte, build_base_cte(include_match_counts=False)])
+    count_sql = f"WITH {count_ctes} SELECT COUNT(*) AS row_count FROM base_rows"
+    page_ctes = ",\n".join([latest_execution_cte, match_counts_cte, build_base_cte(include_match_counts=True)])
     page_sql = f'''
-        WITH {ctes}
+        WITH {page_ctes}
         SELECT *
         FROM base_rows
         ORDER BY COALESCE(NULLIF(last_seen_at, ''), NULLIF(lead_date_raw, ''), '') DESC, match_count DESC, priority_rank ASC, LOWER(name) ASC, lead_id DESC
@@ -988,7 +998,7 @@ def _fetch_glide_base_rows_sql(
         "priority_rank",
     ]
     row_payloads = [{column: row[column] for column in row_columns} for row in rows]
-    match_details = _load_match_detail_for_leads(client, [row["lead_id"] for row in row_payloads])
+    match_details = _load_match_detail_for_leads(client, [row["lead_id"] for row in row_payloads]) if row_payloads else {}
     items = [
         _compose_glide_item(row, filter_config, match_details.get(_safe_str(row.get("lead_id")), {}))
         for row in row_payloads
