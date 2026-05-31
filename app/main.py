@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import inspect
 import json
 from io import BytesIO
@@ -17,6 +18,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
@@ -33,7 +35,7 @@ from .communication import (
 from .config import load_settings
 from .data_management import clear_structured_data, get_structured_dataset, parse_optional_date
 from .db_client import DatabaseClient, REQUIRED_TABS
-from .glide_builder import get_glide_filter_config, get_glide_lead_detail, get_glide_readiness, get_glide_view_dataset, invalidate_glide_cache
+from .glide_builder import get_glide_filter_config, get_glide_lead_detail, get_glide_lead_matches, get_glide_readiness, get_glide_view_dataset, invalidate_glide_cache
 from .glide_execution import log_glide_action, save_glide_execution
 from .job_queue import get_job, submit_job, update_job_progress
 from .parser import parse_combined_whatsapp_export
@@ -41,6 +43,9 @@ from .pipeline import process_manual_entry, process_parsed_messages, process_wha
 from .scheduler import refresh_system
 
 BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+if not STATIC_DIR.exists():
+    STATIC_DIR = BASE_DIR.parent / "stitch_leads_operations_platform" / "static"
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 AUTH_USERNAME = os.getenv("MATCHER_AUTH_USERNAME", "https://www.sheltersrealty.co.in/")
@@ -48,6 +53,7 @@ AUTH_PASSWORD = os.getenv("MATCHER_AUTH_PASSWORD", "home@A1")
 SESSION_SECRET = os.getenv("MATCHER_SESSION_SECRET", "change-me-main-session-secret")
 INTERNAL_PROXY_TOKEN = os.getenv("MATCHER_INTERNAL_PROXY_TOKEN", "change-me-internal-proxy-token")
 AUTH_EXEMPT_PATHS = {"/login", "/logout", "/health"}
+APP_TIMEZONE = ZoneInfo("Asia/Kolkata")
 
 _CPU_COUNT = os.cpu_count() or 1
 _MAX_PARSE_WORKERS = max(1, int(os.getenv("MATCHLAYER_PARSE_WORKERS", str(min(8, _CPU_COUNT)))))
@@ -86,6 +92,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 app = FastAPI(title="Match Maker")
 app.add_middleware(AuthenticationMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 class ClearDataRequest(BaseModel):
@@ -256,7 +264,7 @@ def _translate_ingest_error(exc: Exception) -> HTTPException:
 def _normalize_row_timestamp(value: str | None) -> str:
     raw = str(value or "").strip()
     if not raw:
-        return datetime.now().isoformat(sep=" ", timespec="seconds")
+        return _now_local().isoformat(sep=" ", timespec="seconds")
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
     except ValueError as exc:
@@ -264,6 +272,10 @@ def _normalize_row_timestamp(value: str | None) -> str:
     if raw and len(raw) == 10:
         parsed = datetime.combine(parsed.date(), datetime.min.time())
     return parsed.isoformat(sep=" ", timespec="seconds")
+
+
+def _now_local() -> datetime:
+    return datetime.now(APP_TIMEZONE).replace(tzinfo=None)
 
 
 def _is_truthy(value: str | None) -> bool:
@@ -820,6 +832,14 @@ def glide_view_detail(lead_id: str):
     return payload
 
 
+@app.get("/glide/view/{lead_id}/matches")
+def glide_view_matches(lead_id: str, limit: int = 3, offset: int = 0):
+    try:
+        return get_glide_lead_matches(_client(), lead_id, limit=limit, offset=offset)
+    except Exception as exc:
+        raise _translate_ingest_error(exc) from exc
+
+
 @app.post("/glide/view/{lead_id}/execution")
 def glide_view_update_execution(lead_id: str, payload: GlideExecutionUpdateRequest):
     try:
@@ -840,7 +860,7 @@ def glide_view_update_execution(lead_id: str, payload: GlideExecutionUpdateReque
         raise _translate_ingest_error(exc) from exc
     if detail is None:
         raise HTTPException(status_code=404, detail=f"Unknown glide lead: {lead_id}")
-    return {"message": "Glide execution updated successfully", "detail": detail}
+    return {"message": "Follow-up state updated successfully", "detail": detail}
 
 
 @app.post("/glide/view/{lead_id}/action")
@@ -855,7 +875,7 @@ def glide_view_log_action(lead_id: str, payload: GlideActionRequest):
         raise _translate_ingest_error(exc) from exc
     if detail is None:
         raise HTTPException(status_code=404, detail=f"Unknown glide lead: {lead_id}")
-    return {"message": "Glide action logged successfully", "detail": detail}
+    return {"message": "Lead action logged successfully", "detail": detail}
 
 
 @app.get("/glide/readiness")
@@ -955,7 +975,7 @@ def glide_create_deals_log(payload: DealsLogCreateRequest):
         _client().append_rows(
             "Deals Log",
             [[
-                datetime.now().isoformat(sep=" ", timespec="seconds"),
+                _now_local().isoformat(sep=" ", timespec="seconds"),
                 lead_id,
                 event_type,
                 payload.deal_status.strip(),

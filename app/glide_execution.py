@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 from typing import Any
 
+APP_TIMEZONE = ZoneInfo("Asia/Kolkata")
 TERMINAL_STATUSES = {"closed", "done", "converted", "lost"}
 EDITABLE_FIELDS = {
     "status": "Status",
@@ -16,6 +18,10 @@ EDITABLE_FIELDS = {
 
 def _safe_str(value: object) -> str:
     return "" if value is None else str(value).strip()
+
+
+def _now() -> datetime:
+    return datetime.now(APP_TIMEZONE).replace(tzinfo=None)
 
 
 def _normalize_date(value: str) -> str:
@@ -34,7 +40,7 @@ def _compute_follow_up_pending(status: str, next_follow_up: str) -> str:
 
 
 def _append_system_error(client, *, context: str, lead_id: str, error_type: str, error_message: str, payload: dict[str, Any]) -> None:
-    timestamp = datetime.now().isoformat(sep=" ", timespec="seconds")
+    timestamp = _now().isoformat(sep=" ", timespec="seconds")
     client.append_system_errors(
         [[timestamp, context, lead_id, error_type, error_message, json.dumps(payload, ensure_ascii=True)]]
     )
@@ -69,7 +75,7 @@ def save_glide_execution(
         if new_value != old_value:
             changed.append((column, old_value, new_value))
 
-    now = datetime.now()
+    now = _now()
     touch_interaction = bool(changed)
     if touch_interaction:
         next_values["Last Interaction Date"] = now.date().isoformat()
@@ -124,7 +130,7 @@ def log_glide_action(client, *, lead_id: str, action: str) -> dict[str, str]:
         raise ValueError("action must be 'call' or 'whatsapp'")
 
     current = client.get_glide_execution_map().get(lead_id, {})
-    now = datetime.now()
+    now = _now()
     values = {
         "Status": _safe_str(current.get("Status", "")),
         "Notes": _safe_str(current.get("Notes", "")),

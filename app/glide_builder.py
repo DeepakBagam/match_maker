@@ -640,6 +640,138 @@ def _load_match_detail_for_lead(client, lead_id: str) -> dict[str, str]:
     return _load_match_detail_for_leads(client, [normalized_lead_id]).get(normalized_lead_id, _empty_match_detail())
 
 
+def get_glide_lead_matches(client, lead_id: str, *, limit: int = 3, offset: int = 0) -> dict[str, Any]:
+    normalized_lead_id = _safe_str(lead_id)
+    if not normalized_lead_id:
+        return {"lead_id": "", "row_count": 0, "limit": limit, "offset": offset, "rows": []}
+
+    limit = max(1, min(int(limit or 3), 50))
+    offset = max(0, int(offset or 0))
+
+    if not hasattr(client, "_connect"):
+        dataset = client.get_table_rows("Matches")
+        rows = dataset.get("rows", [])
+        slots: list[dict[str, str]] = []
+        for row in rows:
+            for lead_key, broker_name_key, broker_phone_key, budget_key in (
+                ("Buyer Lead_ID", "Seller Name", "Seller Phone", "Seller Budget"),
+                ("Seller Lead_ID", "Buyer Name", "Buyer Phone", "Buyer Budget"),
+            ):
+                if _safe_str(row.get(lead_key)) != normalized_lead_id:
+                    continue
+                slots.append(
+                    {
+                        "property_summary": _match_property_summary(
+                            {
+                                "Property Type": row.get("Property Type", ""),
+                                "Location": row.get("Location", ""),
+                                "BHK": row.get("BHK", ""),
+                                "Seller Budget": row.get(budget_key, ""),
+                                "Buyer Budget": row.get(budget_key, ""),
+                            }
+                        ),
+                        "broker_name": _safe_str(row.get(broker_name_key, "")),
+                        "broker_phone": _safe_str(row.get(broker_phone_key, "")),
+                        "match_reason": _safe_str(row.get("Match Reason", "")),
+                        "match_score": _safe_str(row.get("Match Score", "")),
+                        "matched_at": _safe_str(row.get("Matched At", "")),
+                    }
+                )
+        slots.sort(key=lambda slot: (float(slot.get("match_score") or 0), slot.get("matched_at", "")), reverse=True)
+        return {
+            "lead_id": normalized_lead_id,
+            "row_count": len(slots),
+            "limit": limit,
+            "offset": offset,
+            "rows": slots[offset:offset + limit],
+        }
+
+    matches_table = _table_name("Matches")
+    sql = f'''
+        WITH normalized AS (
+            SELECT
+                source_match."{_column_name("Buyer Lead_ID")}" AS lead_id,
+                source_match."{_column_name("Seller Name")}" AS broker_name,
+                source_match."{_column_name("Seller Phone")}" AS broker_phone,
+                source_match."{_column_name("Property Type")}" AS property_type,
+                source_match."{_column_name("Location")}" AS location,
+                source_match."{_column_name("BHK")}" AS bhk,
+                source_match."{_column_name("Seller Budget")}" AS budget,
+                source_match."{_column_name("Match Reason")}" AS match_reason,
+                CAST(COALESCE(source_match."{_column_name("Match Score")}", '0') AS REAL) AS match_score,
+                COALESCE(source_match."{_column_name("Matched At")}", '') AS matched_at,
+                COALESCE(NULLIF(counterparty."{_column_name("Last Seen")}", ''), NULLIF(counterparty."{_column_name("Date")}", ''), '') AS counterparty_recency
+            FROM "{matches_table}" AS source_match
+            LEFT JOIN "{_table_name("Structured Data")}" AS counterparty
+                ON counterparty."{_column_name("Lead_ID")}" = source_match."{_column_name("Seller Lead_ID")}"
+            WHERE source_match."{_column_name("Buyer Lead_ID")}" = ?
+            UNION ALL
+            SELECT
+                source_match."{_column_name("Seller Lead_ID")}" AS lead_id,
+                source_match."{_column_name("Buyer Name")}" AS broker_name,
+                source_match."{_column_name("Buyer Phone")}" AS broker_phone,
+                source_match."{_column_name("Property Type")}" AS property_type,
+                source_match."{_column_name("Location")}" AS location,
+                source_match."{_column_name("BHK")}" AS bhk,
+                source_match."{_column_name("Buyer Budget")}" AS budget,
+                source_match."{_column_name("Match Reason")}" AS match_reason,
+                CAST(COALESCE(source_match."{_column_name("Match Score")}", '0') AS REAL) AS match_score,
+                COALESCE(source_match."{_column_name("Matched At")}", '') AS matched_at,
+                COALESCE(NULLIF(counterparty."{_column_name("Last Seen")}", ''), NULLIF(counterparty."{_column_name("Date")}", ''), '') AS counterparty_recency
+            FROM "{matches_table}" AS source_match
+            LEFT JOIN "{_table_name("Structured Data")}" AS counterparty
+                ON counterparty."{_column_name("Lead_ID")}" = source_match."{_column_name("Buyer Lead_ID")}"
+            WHERE source_match."{_column_name("Seller Lead_ID")}" = ?
+        ),
+        ranked AS (
+            SELECT
+                *,
+                COUNT(*) OVER () AS row_count
+            FROM normalized
+            ORDER BY counterparty_recency DESC, match_score DESC, matched_at DESC, broker_name ASC
+        )
+        SELECT
+            row_count,
+            broker_name,
+            broker_phone,
+            property_type,
+            location,
+            bhk,
+            budget,
+            match_reason,
+            match_score,
+            matched_at
+        FROM ranked
+        LIMIT ? OFFSET ?
+    '''
+    with client._connect() as connection:
+        rows = connection.execute(sql, [normalized_lead_id, normalized_lead_id, limit, offset]).fetchall()
+
+    total = int(rows[0]["row_count"] or 0) if rows else 0
+    payload_rows = []
+    for row in rows:
+        payload_rows.append(
+            {
+                "property_summary": " | ".join(
+                    part
+                    for part in [
+                        _safe_str(row["property_type"]),
+                        _safe_str(row["location"]),
+                        f"{_safe_str(row['bhk'])} BHK" if _safe_str(row["bhk"]) else "",
+                        f"Budget {_safe_str(row['budget'])}" if _safe_str(row["budget"]) else "",
+                    ]
+                    if part
+                ),
+                "broker_name": _safe_str(row["broker_name"]),
+                "broker_phone": _safe_str(row["broker_phone"]),
+                "match_reason": _safe_str(row["match_reason"]),
+                "match_score": _safe_str(row["match_score"]),
+                "matched_at": _safe_str(row["matched_at"]),
+            }
+        )
+    return {"lead_id": normalized_lead_id, "row_count": total, "limit": limit, "offset": offset, "rows": payload_rows}
+
+
 def _glide_sql_base_components(now: datetime, filter_config: dict[str, float]) -> dict[str, str]:
     structured_table = _table_name("Structured Data")
     execution_table = _table_name("Glide Execution")

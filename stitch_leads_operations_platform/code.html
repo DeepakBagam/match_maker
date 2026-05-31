@@ -38,15 +38,132 @@
     .material-symbols-outlined {
       font-variation-settings: "FILL" 0, "wght" 450, "GRAD" 0, "opsz" 24;
     }
+    .page-loader[hidden] {
+      display: none;
+    }
+    .page-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: grid;
+      place-items: center;
+      background: rgba(32, 26, 26, 0.2);
+      backdrop-filter: blur(3px);
+    }
+    .loader-card {
+      width: min(250px, calc(100vw - 48px));
+      border: 1px solid #d7c1c2;
+      border-radius: 28px;
+      background: #fffafa;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 18px 42px rgba(32, 26, 26, 0.18);
+    }
+    .loader-house {
+      position: relative;
+      margin: 0 auto 16px;
+      width: 88px;
+      height: 78px;
+    }
+    .loader-roof {
+      position: absolute;
+      left: 14px;
+      top: 11px;
+      width: 60px;
+      height: 60px;
+      transform: rotate(45deg);
+      border-radius: 8px 8px 4px 8px;
+      background: #8e4a4b;
+    }
+    .loader-home {
+      position: absolute;
+      left: 19px;
+      bottom: 0;
+      width: 50px;
+      height: 43px;
+      border-radius: 8px;
+      background: #f8ebeb;
+      border: 3px solid #8e4a4b;
+    }
+    .loader-door {
+      position: absolute;
+      left: 37px;
+      bottom: 3px;
+      width: 14px;
+      height: 23px;
+      border-radius: 8px 8px 0 0;
+      background: #8e4a4b;
+    }
+    .loader-chimney {
+      position: absolute;
+      right: 20px;
+      top: 9px;
+      width: 13px;
+      height: 25px;
+      border-radius: 4px 4px 0 0;
+      background: #8e4a4b;
+    }
+    .loader-smoke {
+      position: absolute;
+      right: 10px;
+      top: -10px;
+      width: 15px;
+      height: 15px;
+      border-radius: 999px;
+      background: rgba(82, 67, 68, 0.34);
+      animation: smoke-rise 1.6s ease-in-out infinite;
+    }
+    .loader-smoke:nth-child(2) {
+      right: 26px;
+      top: -2px;
+      width: 12px;
+      height: 12px;
+      animation-delay: 0.35s;
+    }
+    .loader-smoke:nth-child(3) {
+      right: 40px;
+      top: 5px;
+      width: 10px;
+      height: 10px;
+      animation-delay: 0.7s;
+    }
+    @keyframes smoke-rise {
+      0% {
+        opacity: 0;
+        transform: translateY(12px) scale(0.75);
+      }
+      35% {
+        opacity: 0.85;
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(-18px) scale(1.35);
+      }
+    }
   </style>
 </head>
 <body class="min-h-screen bg-[linear-gradient(180deg,#fff7f4_0%,#fbf8f8_38%,#f5eded_100%)] font-body text-ink">
+  <div class="page-loader" id="pageLoader" hidden aria-live="polite" aria-busy="true">
+    <div class="loader-card">
+      <div class="loader-house" aria-hidden="true">
+        <span class="loader-smoke"></span>
+        <span class="loader-smoke"></span>
+        <span class="loader-smoke"></span>
+        <span class="loader-chimney"></span>
+        <span class="loader-roof"></span>
+        <span class="loader-home"></span>
+        <span class="loader-door"></span>
+      </div>
+      <p class="text-sm font-bold text-ink" id="pageLoaderText">Loading...</p>
+      <p class="mt-1 text-xs text-soft">Please wait.</p>
+    </div>
+  </div>
   <div class="mx-auto flex min-h-screen w-full max-w-md flex-col">
     <header class="sticky top-0 z-20 border-b border-line bg-white/90 px-4 pb-4 pt-5 backdrop-blur">
       <div class="flex items-center justify-between gap-3">
-        <a class="rounded-full border border-line bg-white p-2 text-soft" href="/">
+        <button class="rounded-full border border-line bg-white p-2 text-soft" id="backBtn" type="button">
           <span class="material-symbols-outlined">arrow_back</span>
-        </a>
+        </button>
         <div class="flex-1 text-center">
           <p class="text-xs font-semibold uppercase tracking-[0.22em] text-primary">Lead Detail</p>
           <h1 class="font-display text-2xl text-ink">Mobile Workspace</h1>
@@ -67,6 +184,7 @@
         <div class="flex items-start justify-between gap-4">
           <div class="min-w-0">
             <p class="truncate font-display text-3xl text-ink" id="leadName">Lead</p>
+            <p class="mt-2 text-sm font-semibold text-soft" id="leadDate">-</p>
             <p class="mt-2 text-sm text-soft" id="leadMeta">-</p>
             <p class="mt-1 text-sm text-soft" id="leadMeta2">-</p>
           </div>
@@ -105,8 +223,15 @@
       </section>
 
       <section class="mt-4 rounded-3xl border border-line bg-white p-5 shadow-card">
-        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Best Matches</p>
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Live Matches</p>
+          <p class="text-xs font-semibold text-soft" id="matchPageMeta">0 matches</p>
+        </div>
         <div class="mt-4 space-y-3" id="matchSlots"></div>
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <button class="rounded-2xl border border-line bg-white px-4 py-3 text-sm font-semibold text-ink disabled:opacity-50" id="prevMatchPageBtn" type="button">Previous</button>
+          <button class="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white disabled:opacity-50" id="nextMatchPageBtn" type="button">Next</button>
+        </div>
       </section>
 
       <section class="mt-4 rounded-3xl border border-line bg-white p-5 shadow-card">
@@ -119,6 +244,27 @@
         </div>
 
         <div class="mt-4 space-y-3">
+          <div class="rounded-2xl bg-wash p-4">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Saved Execution</p>
+            <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-soft">Status</p>
+                <p class="mt-1 font-semibold text-ink" id="savedStatus">-</p>
+              </div>
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-soft">Next Follow-up</p>
+                <p class="mt-1 font-semibold text-ink" id="savedNextFollowUp">-</p>
+              </div>
+              <div class="col-span-2">
+                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-soft">Next Action</p>
+                <p class="mt-1 font-semibold text-ink" id="savedNextAction">-</p>
+              </div>
+              <div class="col-span-2">
+                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-soft">Saved At</p>
+                <p class="mt-1 font-semibold text-ink" id="savedUpdatedAt">Not saved yet</p>
+              </div>
+            </div>
+          </div>
           <div>
             <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="statusInput">Status</label>
             <input class="mt-2 w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="statusInput" type="text" />
@@ -158,6 +304,30 @@
     const params = new URLSearchParams(window.location.search);
     const leadId = params.get("lead_id") || "";
     let currentLead = null;
+    let pageLoaderDepth = 0;
+    let matchPage = 1;
+    const matchPageSize = 3;
+
+    function showPageLoader(message = "Loading...") {
+      pageLoaderDepth += 1;
+      document.getElementById("pageLoaderText").textContent = message;
+      document.getElementById("pageLoader").hidden = false;
+    }
+
+    function hidePageLoader() {
+      pageLoaderDepth = Math.max(0, pageLoaderDepth - 1);
+      if (pageLoaderDepth === 0) {
+        document.getElementById("pageLoader").hidden = true;
+      }
+    }
+
+    function goBackToVault() {
+      if (document.referrer && new URL(document.referrer).origin === window.location.origin && window.history.length > 1) {
+        window.history.back();
+        return;
+      }
+      window.location.href = "/";
+    }
 
     function setStatus(message, tone = "neutral") {
       const box = document.getElementById("statusBox");
@@ -208,37 +378,55 @@
       document.getElementById("nextActionInput").value = lead.next_action || "";
       document.getElementById("timingInput").value = lead.timing || "";
       document.getElementById("notesInput").value = lead.notes || "";
+      document.getElementById("savedStatus").textContent = lead.status || "-";
+      document.getElementById("savedNextFollowUp").textContent = lead.next_follow_up || "-";
+      document.getElementById("savedNextAction").textContent = lead.next_action || "-";
+      document.getElementById("savedUpdatedAt").textContent = lead.updated_at || "Not saved yet";
     }
 
-    function renderMatches(lead) {
-      const slots = [1, 2, 3].map((index) => ({
-        summary: lead[`match_${index}_property_summary`] || "",
-        brokerName: lead[`match_${index}_broker_name`] || "",
-        brokerPhone: lead[`match_${index}_broker_phone`] || "",
-      })).filter((slot) => slot.summary || slot.brokerName || slot.brokerPhone);
-
+    function renderMatches(payload) {
+      const slots = payload.rows || [];
       const target = document.getElementById("matchSlots");
+      const total = payload.row_count || 0;
+      const totalPages = Math.max(1, Math.ceil(total / matchPageSize));
+      matchPage = Math.min(Math.max(matchPage, 1), totalPages);
+      const start = total ? ((matchPage - 1) * matchPageSize) + 1 : 0;
+      const end = total ? Math.min(start + slots.length - 1, total) : 0;
+      document.getElementById("matchPageMeta").textContent = total ? `${start}-${end} of ${total}` : "0 matches";
+      document.getElementById("prevMatchPageBtn").disabled = matchPage <= 1;
+      document.getElementById("nextMatchPageBtn").disabled = matchPage >= totalPages;
       if (!slots.length) {
-        target.innerHTML = '<div class="rounded-2xl border border-dashed border-line bg-wash px-4 py-8 text-center text-sm text-soft">No fixed match slots available for this lead yet.</div>';
+        target.innerHTML = '<div class="rounded-2xl border border-dashed border-line bg-wash px-4 py-8 text-center text-sm text-soft">No live matches available for this lead yet.</div>';
         return;
       }
 
       target.innerHTML = slots.map((slot, index) => `
         <article class="rounded-2xl bg-wash p-4">
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Match ${index + 1}</p>
-          <p class="mt-2 font-semibold text-ink">${escapeHtml(slot.summary || "-")}</p>
-          <p class="mt-1 text-sm text-soft">${escapeHtml(slot.brokerName || "-")}${slot.brokerPhone ? ` | ${escapeHtml(slot.brokerPhone)}` : ""}</p>
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Match ${(matchPage - 1) * matchPageSize + index + 1}</p>
+          <p class="mt-2 font-semibold text-ink">${escapeHtml(slot.property_summary || "-")}</p>
+          <p class="mt-1 text-sm text-soft">${escapeHtml(slot.broker_name || "-")}${slot.broker_phone ? ` | ${escapeHtml(slot.broker_phone)}` : ""}</p>
           <div class="mt-3 flex gap-2">
-            <a class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" href="${slot.brokerPhone ? `tel:${escapeHtml(String(slot.brokerPhone).replace(/[^\d+]/g, ""))}` : "#"}">Call Broker</a>
-            <a class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" href="${slot.brokerPhone ? `https://wa.me/${escapeHtml(String(slot.brokerPhone).replace(/\D/g, ""))}` : "#"}">WhatsApp Broker</a>
+            <a class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" href="${slot.broker_phone ? `tel:${escapeHtml(String(slot.broker_phone).replace(/[^\d+]/g, ""))}` : "#"}">Call Broker</a>
+            <a class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" href="${slot.broker_phone ? `https://wa.me/${escapeHtml(String(slot.broker_phone).replace(/\D/g, ""))}` : "#"}">WhatsApp Broker</a>
           </div>
         </article>
       `).join("");
     }
 
+    async function loadMatchPage(page = matchPage) {
+      if (!leadId) {
+        return;
+      }
+      matchPage = Math.max(1, page);
+      const offset = (matchPage - 1) * matchPageSize;
+      const payload = await apiFetch(`/glide/view/${encodeURIComponent(leadId)}/matches?limit=${matchPageSize}&offset=${offset}`);
+      renderMatches(payload);
+    }
+
     function renderLead(lead) {
       currentLead = lead;
       document.getElementById("leadName").textContent = lead.name || "Unnamed Lead";
+      document.getElementById("leadDate").textContent = lead.lead_date ? `Date: ${lead.lead_date}` : "Date: -";
       document.getElementById("leadMeta").textContent = `${lead.area || "No area"}${lead.bhk ? ` | ${lead.bhk} BHK` : ""}${lead.transaction_type ? ` | ${lead.transaction_type}` : ""}`;
       document.getElementById("leadMeta2").textContent = `${lead.budget || "No budget"}${lead.phone ? ` | ${lead.phone}` : ""}`;
       document.getElementById("leadTypeBadge").textContent = lead.lead_type || "Lead";
@@ -246,7 +434,8 @@
       document.getElementById("leadMatchCount").textContent = `${lead.match_count || "0"} live matches`;
       document.getElementById("cleanedMessage").textContent = lead.cleaned_message || "No cleaned message available.";
       fillExecution(lead);
-      renderMatches(lead);
+      matchPage = 1;
+      loadMatchPage(1).catch((error) => setStatus(error.message, "error"));
 
       const phone = normalizePhone(lead.phone, true);
       document.getElementById("callBtn").href = phone ? `tel:${phone}` : "#";
@@ -258,10 +447,15 @@
         setStatus("lead_id is required in the URL.", "error");
         return;
       }
+      showPageLoader("Loading lead...");
       setStatus("Loading lead detail.");
-      const lead = await apiFetch(`/glide/view/${encodeURIComponent(leadId)}`);
-      renderLead(lead);
-      setStatus("Lead detail loaded from shared backend.", "success");
+      try {
+        const lead = await apiFetch(`/glide/view/${encodeURIComponent(leadId)}`);
+        renderLead(lead);
+        setStatus("Lead detail loaded from shared backend.", "success");
+      } finally {
+        hidePageLoader();
+      }
     }
 
     async function saveExecution() {
@@ -269,20 +463,28 @@
         setStatus("lead_id is missing.", "error");
         return;
       }
-      setStatus("Saving execution state.");
-      await apiFetch(`/glide/view/${encodeURIComponent(leadId)}/execution`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: document.getElementById("statusInput").value.trim(),
-          next_follow_up: document.getElementById("nextFollowUpInput").value || null,
-          next_action: document.getElementById("nextActionInput").value.trim(),
-          timing: document.getElementById("timingInput").value.trim(),
-          notes: document.getElementById("notesInput").value.trim(),
-        }),
-      });
-      setStatus("Execution state saved.", "success");
-      await loadLead();
+      showPageLoader("Saving follow-up...");
+      setStatus("Saving follow-up state.");
+      try {
+        const payload = await apiFetch(`/glide/view/${encodeURIComponent(leadId)}/execution`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: document.getElementById("statusInput").value.trim(),
+            next_follow_up: document.getElementById("nextFollowUpInput").value || null,
+            next_action: document.getElementById("nextActionInput").value.trim(),
+            timing: document.getElementById("timingInput").value.trim(),
+            notes: document.getElementById("notesInput").value.trim(),
+          }),
+        });
+        if (payload.detail) {
+          renderLead(payload.detail);
+        }
+        setStatus("Follow-up state saved.", "success");
+        await loadLead();
+      } finally {
+        hidePageLoader();
+      }
     }
 
     async function logAction(action) {
@@ -373,8 +575,18 @@
       loadLead().catch((error) => setStatus(error.message, "error"));
     });
 
+    document.getElementById("backBtn").addEventListener("click", goBackToVault);
+
     document.getElementById("saveExecutionBtn").addEventListener("click", () => {
       saveExecution().catch((error) => setStatus(error.message, "error"));
+    });
+
+    document.getElementById("prevMatchPageBtn").addEventListener("click", () => {
+      loadMatchPage(matchPage - 1).catch((error) => setStatus(error.message, "error"));
+    });
+
+    document.getElementById("nextMatchPageBtn").addEventListener("click", () => {
+      loadMatchPage(matchPage + 1).catch((error) => setStatus(error.message, "error"));
     });
 
     document.getElementById("generateMessageBtn").addEventListener("click", () => {
