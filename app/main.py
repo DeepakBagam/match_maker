@@ -863,6 +863,23 @@ def glide_view_update_execution(lead_id: str, payload: GlideExecutionUpdateReque
     return {"message": "Follow-up state updated successfully", "detail": detail}
 
 
+@app.delete("/glide/view/{lead_id}/execution")
+def glide_view_delete_execution(lead_id: str):
+    try:
+        deleted_count = _client().delete_glide_execution(lead_id)
+        invalidate_glide_cache()
+        detail = get_glide_lead_detail(_client(), lead_id)
+    except Exception as exc:
+        raise _translate_ingest_error(exc) from exc
+    if detail is None:
+        raise HTTPException(status_code=404, detail=f"Unknown glide lead: {lead_id}")
+    return {
+        "message": "Execution state deleted successfully" if deleted_count else "No saved execution state found.",
+        "deleted_count": deleted_count,
+        "detail": detail,
+    }
+
+
 @app.post("/glide/view/{lead_id}/action")
 def glide_view_log_action(lead_id: str, payload: GlideActionRequest):
     try:

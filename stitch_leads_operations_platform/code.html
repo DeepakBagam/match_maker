@@ -240,7 +240,10 @@
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Execution</p>
             <h2 class="mt-1 font-display text-2xl text-ink">Follow-up State</h2>
           </div>
-          <button class="rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-white" id="saveExecutionBtn" type="button">Save</button>
+          <div class="flex items-center gap-2">
+            <button class="rounded-2xl border border-line bg-white px-4 py-2 text-sm font-semibold text-primary" id="deleteExecutionBtn" type="button">Delete</button>
+            <button class="rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-white" id="saveExecutionBtn" type="button">Save</button>
+          </div>
         </div>
 
         <div class="mt-4 space-y-3">
@@ -487,6 +490,31 @@
       }
     }
 
+    async function deleteExecution() {
+      if (!leadId) {
+        setStatus("lead_id is missing.", "error");
+        return;
+      }
+      if (!window.confirm(`Delete saved execution for lead ${leadId}?`)) {
+        return;
+      }
+      showPageLoader("Deleting execution...");
+      setStatus("Deleting saved execution.");
+      try {
+        const payload = await apiFetch(`/glide/view/${encodeURIComponent(leadId)}/execution`, {
+          method: "DELETE",
+        });
+        if (payload.detail) {
+          renderLead(payload.detail);
+        } else {
+          await loadLead();
+        }
+        setStatus(payload.message || "Execution state deleted.", "success");
+      } finally {
+        hidePageLoader();
+      }
+    }
+
     async function logAction(action) {
       if (!leadId) {
         return;
@@ -579,6 +607,10 @@
 
     document.getElementById("saveExecutionBtn").addEventListener("click", () => {
       saveExecution().catch((error) => setStatus(error.message, "error"));
+    });
+
+    document.getElementById("deleteExecutionBtn").addEventListener("click", () => {
+      deleteExecution().catch((error) => setStatus(error.message, "error"));
     });
 
     document.getElementById("prevMatchPageBtn").addEventListener("click", () => {

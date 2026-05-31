@@ -184,7 +184,7 @@
       <div class="mt-4 grid grid-cols-4 gap-2 rounded-2xl bg-blush p-1">
         <button class="section-tab rounded-xl px-3 py-2 text-sm font-semibold" data-section="queue" type="button">Queue</button>
         <button class="section-tab rounded-xl px-3 py-2 text-sm font-semibold" data-section="search" type="button">Search</button>
-        <button class="section-tab rounded-xl px-3 py-2 text-sm font-semibold" data-section="deals" type="button">Execution</button>
+        <button class="section-tab rounded-xl px-3 py-2 text-sm font-semibold" data-section="deals" type="button">Execution Pane</button>
         <button class="section-tab rounded-xl px-3 py-2 text-sm font-semibold" data-section="alerts" type="button">Manual Entry</button>
       </div>
     </header>
@@ -658,30 +658,106 @@
       }
     }
 
+    function hasExecutionState(row) {
+      return Boolean(
+        String(row.status || "").trim()
+        || String(row.notes || "").trim()
+        || String(row.next_follow_up || "").trim()
+        || String(row.next_action || "").trim()
+        || String(row.timing || "").trim()
+      );
+    }
+
     function renderDeals(rows) {
       const target = document.getElementById("dealsList");
-      if (!rows.length) {
-        target.innerHTML = '<div class="rounded-3xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-soft">No execution notes yet.</div>';
+      const executionRows = rows
+        .filter(hasExecutionState)
+        .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))
+        .slice(0, 25);
+      if (!executionRows.length) {
+        target.innerHTML = '<div class="rounded-3xl border border-dashed border-line bg-white px-4 py-10 text-center text-sm text-soft">No saved execution states yet.</div>';
         return;
       }
-      target.innerHTML = rows.map((row) => `
+      target.innerHTML = executionRows.map((row) => `
         <article class="rounded-3xl border border-line bg-white p-4 shadow-card">
-          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">${escapeHtml(row.Timestamp || "-")}</p>
-          <p class="mt-2 font-semibold text-ink">${escapeHtml(row.Event_Type || "-")}</p>
-          <p class="mt-1 text-sm text-soft">${escapeHtml(row.Deal_Status || "-")} | ${escapeHtml(row.Lead_ID || "-")}</p>
-          <p class="mt-2 text-sm text-soft">${escapeHtml(row.Notes || "-")}</p>
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="truncate font-display text-2xl text-ink">${escapeHtml(row.name || "Unnamed Lead")}</p>
+              <p class="mt-1 text-sm text-soft">${escapeHtml(row.area || "No location")}${row.phone ? ` | ${escapeHtml(row.phone)}` : ""}</p>
+            </div>
+            <span class="rounded-full bg-blush px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-primary">${escapeHtml(row.lead_type || "Lead")}</span>
+          </div>
+          <div class="mt-4 grid grid-cols-2 gap-3 rounded-2xl bg-wash p-3 text-sm">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-soft">Status</p>
+              <p class="mt-1 font-semibold text-ink">${escapeHtml(row.status || "-")}</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-soft">Next Follow-up</p>
+              <p class="mt-1 font-semibold text-ink">${escapeHtml(row.next_follow_up || "-")}</p>
+            </div>
+            <div class="col-span-2">
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-soft">Next Action</p>
+              <p class="mt-1 font-semibold text-ink">${escapeHtml(row.next_action || "-")}</p>
+            </div>
+            ${row.timing ? `
+              <div class="col-span-2">
+                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-soft">Timing</p>
+                <p class="mt-1 font-semibold text-ink">${escapeHtml(row.timing)}</p>
+              </div>
+            ` : ""}
+          </div>
+          ${row.notes ? `<p class="mt-3 whitespace-pre-wrap text-sm text-soft">${escapeHtml(row.notes)}</p>` : ""}
+          <div class="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">Saved ${escapeHtml(row.updated_at || "-")}</p>
+            <div class="flex items-center gap-2">
+              <button class="delete-execution-btn rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-primary" data-lead-id="${escapeHtml(row.lead_id || "")}" type="button">Delete</button>
+              <a class="lead-open-link rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-white" href="/lead?lead_id=${encodeURIComponent(row.lead_id || "")}">Open</a>
+            </div>
+          </div>
         </article>
       `).join("");
+      target.querySelectorAll(".lead-open-link").forEach((link) => {
+        link.addEventListener("click", rememberMobileState);
+      });
+      target.querySelectorAll(".delete-execution-btn").forEach((button) => {
+        button.addEventListener("click", () => {
+          deleteExecutionFromPane(button.dataset.leadId || "").catch((error) => setStatus(error.message || "Failed to delete execution state.", "error"));
+        });
+      });
     }
 
     async function loadDeals() {
       showPageLoader("Loading execution...");
       setStatus("Loading execution pane.");
       try {
-        const payload = await apiFetch("/glide/deals-log?limit=25");
+        const payload = await apiFetch("/glide/view?mode=all&limit=200&offset=0");
         renderDeals(payload.rows || []);
         state.dealsLoaded = true;
         setStatus("Execution pane loaded.", "success");
+      } finally {
+        hidePageLoader();
+      }
+    }
+
+    async function deleteExecutionFromPane(leadId) {
+      const normalizedLeadId = String(leadId || "").trim();
+      if (!normalizedLeadId) {
+        setStatus("Lead ID is missing for this execution item.", "error");
+        return;
+      }
+      if (!window.confirm(`Delete saved execution for lead ${normalizedLeadId}?`)) {
+        return;
+      }
+      showPageLoader("Deleting execution...");
+      setStatus("Deleting saved execution.");
+      try {
+        const payload = await apiFetch(`/glide/view/${encodeURIComponent(normalizedLeadId)}/execution`, {
+          method: "DELETE",
+        });
+        state.dealsLoaded = false;
+        await loadDeals();
+        setStatus(payload.message || "Execution state deleted.", "success");
       } finally {
         hidePageLoader();
       }
@@ -735,12 +811,16 @@
 
     document.querySelectorAll(".section-tab").forEach((button) => {
       button.addEventListener("click", async () => {
-        state.section = button.dataset.section || "queue";
-        updateSectionTabs();
-        if (state.section === "queue" && !state.queueLoaded) {
-          await loadQueue();
-        } else if (state.section === "deals" && !state.dealsLoaded) {
-          await loadDeals();
+        try {
+          state.section = button.dataset.section || "queue";
+          updateSectionTabs();
+          if (state.section === "queue" && !state.queueLoaded) {
+            await loadQueue();
+          } else if (state.section === "deals" && !state.dealsLoaded) {
+            await loadDeals();
+          }
+        } catch (error) {
+          setStatus(error.message || "Failed to load section.", "error");
         }
       });
     });
@@ -837,16 +917,24 @@
       document.getElementById("searchResults").innerHTML = "";
       document.getElementById("searchMeta").textContent = "Search reset.";
     });
-    document.getElementById("refreshDealsBtn").addEventListener("click", loadDeals);
-    document.getElementById("saveAlertBtn").addEventListener("click", saveAlert);
+    document.getElementById("refreshDealsBtn").addEventListener("click", () => {
+      loadDeals().catch((error) => setStatus(error.message || "Failed to load execution pane.", "error"));
+    });
+    document.getElementById("saveAlertBtn").addEventListener("click", () => {
+      saveAlert().catch((error) => setStatus(error.message || "Failed to submit lead.", "error"));
+    });
     document.getElementById("closeMessageModalBtn").addEventListener("click", closeMessageModal);
     document.getElementById("refreshAllBtn").addEventListener("click", async () => {
-      if (state.section === "queue") {
-        await loadQueue();
-      } else if (state.section === "search") {
-        await runSearch();
-      } else if (state.section === "deals") {
-        await loadDeals();
+      try {
+        if (state.section === "queue") {
+          await loadQueue();
+        } else if (state.section === "search") {
+          await runSearch();
+        } else if (state.section === "deals") {
+          await loadDeals();
+        }
+      } catch (error) {
+        setStatus(error.message || "Refresh failed.", "error");
       }
     });
 

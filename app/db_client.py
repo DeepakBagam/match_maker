@@ -478,7 +478,6 @@ class DatabaseClient:
             connection.commit()
 
         self._structure_verified = True
-        self.sync_clean_data_formula()
 
     def _create_table(self, connection: sqlite3.Connection, tab: str, columns: list[str]) -> None:
         table_name = _table_name(tab)
@@ -1142,6 +1141,21 @@ class DatabaseClient:
                 )
             connection.commit()
         return merged
+
+    def delete_glide_execution(self, lead_id: str) -> int:
+        self.ensure_structure()
+        table_name = _table_name("Glide Execution")
+        lead_column = _column_name("Lead_ID")
+        normalized_lead_id = str(lead_id or "").strip()
+        if not normalized_lead_id:
+            return 0
+        with self._connect() as connection:
+            result = connection.execute(
+                f'DELETE FROM "{table_name}" WHERE "{lead_column}" = ?',
+                (normalized_lead_id,),
+            )
+            connection.commit()
+            return int(getattr(result, "rowcount", 0) or 0)
 
     def append_glide_write_log(self, rows: list[list[object]]) -> None:
         self.append_rows("Glide Write Log", rows)

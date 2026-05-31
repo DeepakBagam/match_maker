@@ -720,6 +720,9 @@
                     <button class="rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#B35D29]" id="saveGlideExecutionBtn" type="button">
                       Save Follow-up
                     </button>
+                    <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2.5 text-sm font-semibold text-danger transition-colors hover:bg-[#FFF8F4]" id="deleteGlideExecutionBtn" type="button">
+                      Delete Execution
+                    </button>
                     <span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="detailExecutionMeta">No execution updates yet.</span>
                   </div>
                 </div>
@@ -786,22 +789,22 @@
             <ul class="mt-4 space-y-2 text-sm text-on-surface-variant" id="glideSyncRules"></ul>
           </section>
 
-          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm" hidden>
+          <section class="rounded-2xl border border-[#E3DCD5] bg-white p-5 shadow-warm">
             <div class="mb-4 flex items-center justify-between gap-4">
               <div>
                 <h2 class="text-xl font-semibold text-on-surface">Execution Pane</h2>
-                <p class="mt-1 text-sm text-on-surface-variant">Append-only high-signal follow-up and deal memory. Keep this table small and intentional.</p>
+                <p class="mt-1 text-sm text-on-surface-variant">Saved follow-up states from lead execution fields.</p>
               </div>
               <button class="rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" id="refreshDealsLogBtn" type="button">Refresh</button>
             </div>
-            <div class="grid gap-3 md:grid-cols-2">
+            <div class="hidden gap-3 md:grid-cols-2">
               <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="dealsLeadIdInput" placeholder="Lead ID (optional)" type="text" />
               <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="dealsEventTypeInput" placeholder="Event Type" type="text" />
               <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="dealsStatusInput" placeholder="Deal Status" type="text" />
               <input class="w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="dealsCreatedByInput" placeholder="Created By" type="text" value="Execution Pane" />
               <textarea class="md:col-span-2 w-full rounded-lg border-[#E3DCD5] bg-white text-sm focus:border-primary focus:ring-primary" id="dealsNotesInput" placeholder="High-signal notes" rows="3"></textarea>
             </div>
-            <div class="mt-3 flex items-center gap-3">
+            <div class="mt-3 hidden items-center gap-3">
               <button class="rounded-lg bg-[#CC703B] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#B35D29]" id="saveDealsLogBtn" type="button">Add Execution Note</button>
               <span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant" id="dealsLogMeta">No deal log action yet.</span>
             </div>
@@ -1109,6 +1112,7 @@
       }
       if (viewId === "glide-view" && (!glideState.loaded || glideState.needsRefresh)) {
         loadGlideView(glideState.needsRefresh);
+        loadDealsLog().catch((error) => setGlideStatus(error.message || "Failed to load execution pane.", "error"));
       }
     }
 
@@ -1951,6 +1955,53 @@
       setGlideStatus("Follow-up state updated successfully.", "success");
     }
 
+    async function deleteGlideExecution() {
+      if (!glideState.selectedDetail?.lead_id) {
+        setGlideStatus("Select a lead before deleting execution fields.", "error");
+        return;
+      }
+      if (!window.confirm(`Delete saved execution for lead ${glideState.selectedDetail.lead_id}?`)) {
+        return;
+      }
+      const res = await fetch(`/glide/view/${encodeURIComponent(glideState.selectedDetail.lead_id)}/execution`, {
+        method: "DELETE",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGlideStatus(body.detail || "Failed to delete execution state.", "error");
+        return;
+      }
+      renderGlideDetail(body.detail);
+      glideState.needsRefresh = true;
+      await loadGlideView(true);
+      setGlideStatus(body.message || "Execution state deleted successfully.", "success");
+    }
+
+    async function deleteGlideExecutionFromPane(leadId) {
+      const normalizedLeadId = String(leadId || "").trim();
+      if (!normalizedLeadId) {
+        setGlideStatus("Lead ID is missing for this execution item.", "error");
+        return;
+      }
+      if (!window.confirm(`Delete saved execution for lead ${normalizedLeadId}?`)) {
+        return;
+      }
+      const res = await fetch(`/glide/view/${encodeURIComponent(normalizedLeadId)}/execution`, {
+        method: "DELETE",
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setGlideStatus(body.detail || "Failed to delete execution state.", "error");
+        return;
+      }
+      if (glideState.selectedDetail?.lead_id === normalizedLeadId && body.detail) {
+        renderGlideDetail(body.detail);
+      }
+      glideState.needsRefresh = true;
+      await loadGlideView(true);
+      setGlideStatus(body.message || "Execution state deleted successfully.", "success");
+    }
+
     async function logGlideAction(action) {
       if (!glideState.selectedDetail?.lead_id) {
         return;
@@ -2021,22 +2072,66 @@
       document.getElementById("glideFilterPriorityThreshold").textContent = `${config.priority_qualified_score}`;
     }
 
+    function hasExecutionState(row) {
+      return Boolean(
+        String(row.status || "").trim()
+        || String(row.notes || "").trim()
+        || String(row.next_follow_up || "").trim()
+        || String(row.next_action || "").trim()
+        || String(row.timing || "").trim()
+      );
+    }
+
     function renderDealsLog(rows) {
       const container = document.getElementById("dealsLogList");
-      if (!rows.length) {
-        container.innerHTML = `<div class="rounded-2xl border border-dashed border-[#E3DCD5] bg-[#FFFCFA] px-4 py-6 text-center text-sm text-on-surface-variant">No deal log entries yet.</div>`;
+      const executionRows = rows
+        .filter(hasExecutionState)
+        .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")))
+        .slice(0, 50);
+      if (!executionRows.length) {
+        container.innerHTML = `<div class="rounded-2xl border border-dashed border-[#E3DCD5] bg-[#FFFCFA] px-4 py-6 text-center text-sm text-on-surface-variant">No saved execution states yet.</div>`;
         return;
       }
-      container.innerHTML = rows.map((row) => `
+      container.innerHTML = executionRows.map((row) => `
         <div class="rounded-2xl border border-[#E3DCD5] bg-[#FFFCFA] p-4">
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="text-sm font-semibold text-on-surface">${escapeHtml(row["Event_Type"] || "Event")}</p>
-            <span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row["Timestamp"] || "")}</span>
+            <div>
+              <p class="text-sm font-semibold text-on-surface">${escapeHtml(row.name || "Unnamed Lead")}</p>
+              <p class="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">${escapeHtml(row.lead_id || "-")} | ${escapeHtml(row.lead_type || "Lead")} | ${escapeHtml(row.area || "No location")}</p>
+            </div>
+            <span class="text-xs font-semibold uppercase tracking-[0.14em] text-on-surface-variant">Saved ${escapeHtml(row.updated_at || "-")}</span>
           </div>
-          <p class="mt-1 text-sm text-on-surface-variant">Lead: ${escapeHtml(row["Lead_ID"] || "-")} | Status: ${escapeHtml(row["Deal_Status"] || "-")} | By: ${escapeHtml(row["Created_By"] || "-")}</p>
-          <p class="mt-2 text-sm text-on-surface">${escapeHtml(row["Notes"] || "")}</p>
+          <div class="mt-3 grid gap-3 rounded-2xl bg-white p-3 sm:grid-cols-2">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Status</p>
+              <p class="mt-1 text-sm font-semibold text-on-surface">${escapeHtml(row.status || "-")}</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Next Follow-up</p>
+              <p class="mt-1 text-sm font-semibold text-on-surface">${escapeHtml(row.next_follow_up || "-")}</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Next Action</p>
+              <p class="mt-1 text-sm font-semibold text-on-surface">${escapeHtml(row.next_action || "-")}</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-[0.12em] text-on-surface-variant">Timing</p>
+              <p class="mt-1 text-sm font-semibold text-on-surface">${escapeHtml(row.timing || "-")}</p>
+            </div>
+          </div>
+          ${row.notes ? `<p class="mt-3 whitespace-pre-wrap text-sm text-on-surface">${escapeHtml(row.notes)}</p>` : ""}
+          <div class="mt-3 flex flex-wrap justify-end gap-2">
+            <button class="open-execution-lead-btn rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-on-surface hover:bg-[#FFF8F4]" data-lead-id="${escapeHtml(row.lead_id || "")}" type="button">Open</button>
+            <button class="delete-execution-row-btn rounded-lg border border-[#E3DCD5] bg-white px-4 py-2 text-sm font-semibold text-danger hover:bg-[#FFF8F4]" data-lead-id="${escapeHtml(row.lead_id || "")}" type="button">Delete</button>
+          </div>
         </div>
       `).join("");
+      container.querySelectorAll(".open-execution-lead-btn").forEach((button) => {
+        button.addEventListener("click", () => loadGlideLeadDetail(button.dataset.leadId || ""));
+      });
+      container.querySelectorAll(".delete-execution-row-btn").forEach((button) => {
+        button.addEventListener("click", () => deleteGlideExecutionFromPane(button.dataset.leadId || ""));
+      });
     }
 
     function renderAlertsLeads(rows) {
@@ -2330,10 +2425,10 @@
     }
 
     async function loadDealsLog() {
-      const res = await fetch("/glide/deals-log?limit=10");
+      const res = await fetch("/glide/view?mode=all&limit=500&offset=0");
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(body.detail || "Failed to load deals log.");
+        throw new Error(body.detail || "Failed to load execution pane.");
       }
       glideState.dealsLogRows = body.rows || [];
       renderDealsLog(glideState.dealsLogRows);
@@ -2382,9 +2477,9 @@
       document.getElementById("dealsEventTypeInput").value = "";
       document.getElementById("dealsStatusInput").value = "";
       document.getElementById("dealsNotesInput").value = "";
-      document.getElementById("dealsLogMeta").textContent = "Deals log updated.";
+      document.getElementById("dealsLogMeta").textContent = "Execution pane updated.";
       await loadDealsLog();
-      setGlideStatus(body.message || "Deals log entry created successfully.", "success");
+      setGlideStatus(body.message || "Execution note created successfully.", "success");
     }
 
     async function saveAlertsLead() {
@@ -2931,6 +3026,7 @@
     document.getElementById("saveDealsLogBtn").addEventListener("click", saveDealsLog);
     document.getElementById("saveAlertsLeadBtn").addEventListener("click", saveAlertsLead);
     document.getElementById("saveGlideExecutionBtn").addEventListener("click", saveGlideExecution);
+    document.getElementById("deleteGlideExecutionBtn").addEventListener("click", deleteGlideExecution);
     document.getElementById("leadViewFilter").addEventListener("change", async (event) => {
       glideState.queueMode = event.target.value || "today";
       glideState.queuePage = 1;
