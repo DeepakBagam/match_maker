@@ -467,6 +467,8 @@ class DatabaseClient:
             return
 
         with self._connect() as connection:
+            if self.is_postgres:
+                connection.execute("SELECT pg_advisory_xact_lock(68425746)")
             for tab, columns in REQUIRED_TABS.items():
                 self._create_table(connection, tab, columns)
                 self._ensure_table_columns(connection, tab, columns)
@@ -555,7 +557,6 @@ class DatabaseClient:
         processed_messages_table = _table_name("Processed Messages")
         processed_messages_column = _column_name("Fingerprint")
         if self.is_postgres:
-            connection.execute(f'DROP INDEX IF EXISTS "{processed_messages_index}"')
             connection.execute(
                 f'CREATE INDEX IF NOT EXISTS "{processed_messages_index}" '
                 f'ON "{processed_messages_table}" (md5(COALESCE("{processed_messages_column}", \'\')))'
