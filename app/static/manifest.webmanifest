@@ -7,15 +7,27 @@
   "theme_color": "#D9907A",
   "icons": [
     {
-      "src": "/static/icons/mobile-app-icon.svg",
-      "sizes": "1024x1024",
-      "type": "image/svg+xml",
+      "src": "/static/icons/mobile-app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/static/icons/mobile-app-icon-maskable.svg",
-      "sizes": "1024x1024",
-      "type": "image/svg+xml",
+      "src": "/static/icons/mobile-app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icons/mobile-app-icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/static/icons/mobile-app-icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ]
