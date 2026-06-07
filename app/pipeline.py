@@ -757,3 +757,150 @@ def process_manual_entry(
         )
     ]
     return process_parsed_messages(client, parsed, apply_lookback=False, progress_callback=progress_callback)
+
+
+def process_manual_entry_fast(
+    client: DatabaseClient,
+    name: str,
+    phone: str,
+    requirement: str,
+    location: str,
+    budget: str,
+    notes: str,
+    source: str = "Manual",
+    *,
+    progress_callback: ProgressReporter | None = None,
+) -> PipelineResult:
+    client.ensure_structure()
+    run_id = str(uuid.uuid4())
+    start_time = _now()
+    result = PipelineResult(
+        processed=0,
+        new_rows=0,
+        duplicates=0,
+        ignored=0,
+        matches=0,
+        run_id=run_id,
+        start_time=start_time.isoformat(sep=" "),
+        status="RUNNING",
+    )
+    try:
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "extract",
+                    "stage_label": "Extracting",
+                    "message": "Extracting one manual lead.",
+                    "progress": 30,
+                    "processed_rows": 1,
+                    "total_rows": 1,
+                }
+            )
+
+        now = _now()
+        msg = f"{requirement} location {location} budget {budget} notes {notes}".strip()
+        sender = f"{name} {phone}".strip()
+        parsed = [
+            ParsedMessage(
+                timestamp=now,
+                sender=sender,
+                message=msg,
+                raw_message=msg,
+                source=source,
+            )
+        ]
+
+        existing = _read_existing(client)
+        filtered, message_duplicates = _filter_new_messages(parsed, existing, _stored_message_fingerprints(client))
+        client.append_rows(
+            "Manual Entries",
+            [[now.isoformat(sep=" "), name, phone, requirement, location, budget, notes, source]],
+        )
+        if not filtered:
+            result.status = "SUCCESS"
+            result.duplicates = message_duplicates
+            result.end_time = _now().isoformat(sep=" ")
+            return result
+
+        config, weights = _load_config(client)
+        location_map = MappingResolver(client.get_table("Location Mapping"))
+        property_map = MappingResolver(client.get_table("Property Type Mapping"))
+        incoming = to_structured(filtered, location_map, property_map, weights)
+        usable_incoming = [lead for lead in incoming if lead.values.get("Type") != "Ignore"]
+        if not usable_incoming:
+            _append_tracking_rows(client, filtered, now)
+            result.processed = len(filtered)
+            result.ignored = len(incoming)
+            result.status = "SUCCESS"
+            result.end_time = _now().isoformat(sep=" ")
+            return result
+
+        lead_ids = [str(lead.values.get("Lead_ID", "")).strip() for lead in usable_incoming if str(lead.values.get("Lead_ID", "")).strip()]
+        all_leads = existing + usable_incoming
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "match",
+                    "stage_label": "Matching",
+                    "message": "Computing matches for the manual lead.",
+                    "progress": 65,
+                    "processed_rows": len(usable_incoming),
+                    "total_rows": len(usable_incoming),
+                }
+            )
+        all_matches = compute_matches(all_leads, weights, float(config.get("match_threshold", 55)), now)
+        direct_matches = [
+            match
+            for match in all_matches
+            if str(match.get("Buyer Lead_ID", "")).strip() in lead_ids
+            or str(match.get("Seller Lead_ID", "")).strip() in lead_ids
+        ]
+        compute_priority(usable_incoming, direct_matches, weights, now)
+
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "write",
+                    "stage_label": "Writing",
+                    "message": "Saving manual lead and direct matches.",
+                    "progress": 85,
+                    "match_count": len(direct_matches),
+                }
+            )
+        client.upsert_structured_leads(usable_incoming)
+        if hasattr(client, "replace_matches_for_leads"):
+            client.replace_matches_for_leads(lead_ids, direct_matches)
+        _append_tracking_rows(client, filtered, now)
+
+        from .glide_builder import invalidate_glide_cache
+
+        invalidate_glide_cache()
+        result.processed = len(filtered)
+        result.new_rows = len(usable_incoming)
+        result.duplicates = message_duplicates
+        result.ignored = len(incoming) - len(usable_incoming)
+        result.matches = len(direct_matches)
+        result.status = "SUCCESS"
+        result.end_time = _now().isoformat(sep=" ")
+        if progress_callback:
+            progress_callback(
+                {
+                    "stage": "complete",
+                    "stage_label": "Complete",
+                    "message": "Manual lead saved.",
+                    "progress": 100,
+                    "processed_rows": result.processed,
+                    "total_rows": result.processed,
+                    "match_count": result.matches,
+                    "new_rows": result.new_rows,
+                    "duplicates": result.duplicates,
+                }
+            )
+        print(f"[RUN {run_id}] Fast manual completed in {(_now() - start_time).total_seconds():.2f}s - Status: {result.status}")
+        return result
+    except Exception as exc:
+        result.status = "FAILED"
+        result.error_message = str(exc)
+        result.end_time = _now().isoformat(sep=" ")
+        traceback.print_exc()
+        return result

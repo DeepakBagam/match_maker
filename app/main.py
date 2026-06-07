@@ -39,7 +39,7 @@ from .glide_builder import get_glide_filter_config, get_glide_lead_detail, get_g
 from .glide_execution import log_glide_action, save_glide_execution
 from .job_queue import get_job, submit_job, update_job_progress
 from .parser import parse_combined_whatsapp_export
-from .pipeline import process_manual_entry, process_parsed_messages, process_whatsapp_text
+from .pipeline import process_manual_entry, process_manual_entry_fast, process_parsed_messages, process_whatsapp_text
 from .scheduler import refresh_system
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -496,7 +496,7 @@ def _process_manual_job(
                 "total_rows": 1,
             }
         )
-    return _process_manual_entry_with_progress(
+    return process_manual_entry_fast(
         _client(),
         name=name,
         phone=phone,

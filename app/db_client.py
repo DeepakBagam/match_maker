@@ -1079,6 +1079,34 @@ class DatabaseClient:
                 connection.executemany(update_sql, updates)
             connection.commit()
 
+    def replace_matches_for_leads(self, lead_ids: list[str], matches: list[dict[str, object]]) -> None:
+        normalized_ids = [str(lead_id).strip() for lead_id in lead_ids if str(lead_id).strip()]
+        if not normalized_ids:
+            return
+        self.ensure_structure()
+        table_name = _table_name("Matches")
+        columns = REQUIRED_TABS["Matches"]
+        column_names = [_column_name(column) for column in columns]
+        quoted_columns = ", ".join(f'"{column}"' for column in column_names)
+        placeholders = ", ".join("?" for _ in column_names)
+        insert_sql = f'INSERT INTO "{table_name}" ({quoted_columns}) VALUES ({placeholders})'
+        rows = [[match.get(column, "") for column in columns] for match in matches]
+        with self._connect() as connection:
+            for start in range(0, len(normalized_ids), 900):
+                chunk = normalized_ids[start:start + 900]
+                id_placeholders = ", ".join("?" for _ in chunk)
+                connection.execute(
+                    f'''
+                    DELETE FROM "{table_name}"
+                    WHERE "{_column_name("Buyer Lead_ID")}" IN ({id_placeholders})
+                       OR "{_column_name("Seller Lead_ID")}" IN ({id_placeholders})
+                    ''',
+                    [*chunk, *chunk],
+                )
+            if rows:
+                connection.executemany(insert_sql, rows)
+            connection.commit()
+
     def get_processed_message_fingerprints(self) -> set[str]:
         self.ensure_structure()
         table_name = _table_name("Processed Messages")

@@ -4,9 +4,13 @@
   <meta charset="utf-8" />
   <meta content="width=device-width, initial-scale=1.0" name="viewport" />
   <title>Leads Mobile</title>
+  <link href="/static/icons/mobile-app-icon-192.png" rel="icon" sizes="192x192" type="image/png" />
   <link href="/static/icons/mobile-app-icon.svg" rel="icon" type="image/svg+xml" />
-  <link href="/static/icons/mobile-app-icon.svg" rel="apple-touch-icon" />
+  <link href="/static/icons/mobile-app-icon-180.png" rel="apple-touch-icon" sizes="180x180" />
   <link href="/static/manifest.webmanifest" rel="manifest" />
+  <meta content="yes" name="mobile-web-app-capable" />
+  <meta content="yes" name="apple-mobile-web-app-capable" />
+  <meta content="Leads Mobile" name="apple-mobile-web-app-title" />
   <meta content="#D9907A" name="theme-color" />
   <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
@@ -335,6 +339,20 @@
             <button class="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-card" id="saveAlertBtn" type="button">Submit Lead</button>
           </div>
         </div>
+
+        <div class="rounded-3xl border border-line bg-white p-4 shadow-card">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="font-display text-2xl text-ink">Manual Entries</h2>
+              <p class="mt-1 text-sm text-soft">Recently added mobile leads with live match counts.</p>
+            </div>
+            <button class="rounded-full border border-line bg-white p-2 text-soft shadow-card" id="refreshManualEntriesBtn" type="button" title="Refresh manual entries">
+              <span class="material-symbols-outlined">sync</span>
+            </button>
+          </div>
+          <div class="mt-4 text-sm font-semibold text-ink" id="manualEntriesMeta">Loading manual entries.</div>
+          <div class="mt-3 space-y-3" id="manualEntriesList"></div>
+        </div>
       </section>
     </main>
   </div>
@@ -366,6 +384,9 @@
       queueSearchHandle: null,
       queueLoaded: false,
       dealsLoaded: false,
+      manualEntriesLoaded: false,
+      manualEntriesRows: [],
+      pendingManualEntries: [],
       lastQueueUrl: "/",
     };
 
@@ -763,6 +784,95 @@
       }
     }
 
+    function isManualLead(row) {
+      return String(row.source || "").trim().toLowerCase() === "manual";
+    }
+
+    function renderManualEntries(rows) {
+      const target = document.getElementById("manualEntriesList");
+      const meta = document.getElementById("manualEntriesMeta");
+      const pendingRows = state.pendingManualEntries;
+      const allRows = [...pendingRows, ...rows];
+      meta.textContent = allRows.length ? `${allRows.length} recent manual leads.` : "No manual entries found yet.";
+      if (!allRows.length) {
+        target.innerHTML = '<div class="rounded-3xl border border-dashed border-line bg-white px-4 py-8 text-center text-sm text-soft">Submitted mobile leads will appear here after matching finishes.</div>';
+        return;
+      }
+      target.innerHTML = allRows.map((row) => `
+        <article class="rounded-3xl border border-line bg-wash p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="truncate font-semibold text-ink">${escapeHtml(row.name || "Unnamed Lead")}</p>
+              <p class="mt-1 text-sm text-soft">${escapeHtml(row.area || "No location")}${row.property_type ? ` | ${escapeHtml(row.property_type)}` : ""}${row.bhk ? ` | ${escapeHtml(row.bhk)} BHK` : ""}</p>
+              <p class="mt-1 text-sm text-soft">${escapeHtml(row.budget || "No budget")}${row.phone ? ` | ${escapeHtml(row.phone)}` : ""}</p>
+            </div>
+            <span class="${row.pending ? "bg-blush text-primary" : row.lead_type === "Buyer" ? "bg-emerald-50 text-emerald-700" : "bg-warm text-primary"} rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]">${escapeHtml(row.pending ? "Processing" : row.lead_type || "Lead")}</span>
+          </div>
+          <div class="mt-4 flex items-center justify-between gap-3 border-t border-line pt-3">
+            <div class="text-xs font-semibold uppercase tracking-[0.18em] text-soft">${escapeHtml(row.lead_date || "-")} | ${escapeHtml(row.pending ? "matching" : row.match_count || "0")} matches</div>
+            <div class="flex items-center gap-2">
+              <a class="rounded-2xl border border-line bg-white px-3 py-2 text-sm font-semibold text-ink" href="${row.phone ? `tel:${escapeHtml(String(row.phone).replace(/[^\d+]/g, ""))}` : "#"}">Call</a>
+              ${row.pending ? "" : `<a class="lead-open-link rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-white" href="/lead?lead_id=${encodeURIComponent(row.lead_id || "")}">Open</a>`}
+            </div>
+          </div>
+        </article>
+      `).join("");
+      target.querySelectorAll(".lead-open-link").forEach((link) => {
+        link.addEventListener("click", rememberMobileState);
+      });
+    }
+
+    async function loadManualEntries({ showLoader = true } = {}) {
+      if (showLoader) {
+        showPageLoader("Loading manual entries...");
+      }
+      try {
+        const payload = await apiFetch("/glide/view?mode=all&limit=200&offset=0");
+        state.manualEntriesRows = (payload.rows || []).filter(isManualLead).slice(0, 20);
+        state.pendingManualEntries = state.pendingManualEntries.filter((pending) => {
+          const phone = String(pending.phone || "").replace(/\D/g, "");
+          const name = String(pending.name || "").trim().toLowerCase();
+          return !state.manualEntriesRows.some((row) => {
+            const rowPhone = String(row.phone || "").replace(/\D/g, "");
+            const rowName = String(row.name || "").trim().toLowerCase();
+            return (phone && rowPhone === phone) || (name && rowName === name && row.lead_date >= pending.lead_date);
+          });
+        });
+        state.manualEntriesLoaded = true;
+        renderManualEntries(state.manualEntriesRows);
+      } finally {
+        if (showLoader) {
+          hidePageLoader();
+        }
+      }
+    }
+
+    async function waitForManualJob(jobId) {
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        const job = await apiFetch(`/jobs/${encodeURIComponent(jobId)}`);
+        if (job.status === "success" || job.status === "completed") {
+          return job;
+        }
+        if (job.status === "failure" || job.status === "failed") {
+          throw new Error(job.error_message || job.error || "Manual lead processing failed.");
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      }
+      return null;
+    }
+
+    async function refreshManualEntriesAfterJob(jobId) {
+      try {
+        if (jobId) {
+          await waitForManualJob(jobId);
+        }
+        await loadManualEntries({ showLoader: false });
+        state.queueLoaded = false;
+      } catch (error) {
+        setStatus(error.message || "Manual lead matching is still processing.", "error");
+      }
+    }
+
     async function saveAlert() {
       const name = document.getElementById("manualName").value.trim();
       const phone = document.getElementById("manualPhone").value.trim();
@@ -776,6 +886,7 @@
       showPageLoader("Submitting lead...");
       setStatus("Submitting manual lead.");
       try {
+        const submittedAt = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
         const formData = new FormData();
         formData.set("name", name);
         formData.set("phone", phone);
@@ -799,9 +910,22 @@
         document.getElementById("manualLocation").value = "";
         document.getElementById("manualBudget").value = "";
         state.queueLoaded = false;
+        state.manualEntriesLoaded = false;
+        state.pendingManualEntries.unshift({
+          pending: true,
+          name,
+          phone,
+          area: location,
+          budget,
+          lead_date: submittedAt,
+          match_count: "",
+        });
+        renderManualEntries(state.manualEntriesRows);
         if (response.status === 202 && body.job_id) {
-          setStatus("Manual lead submitted.", "success");
+          setStatus("Manual lead submitted. Matching will update below.", "success");
+          refreshManualEntriesAfterJob(body.job_id);
         } else {
+          await loadManualEntries({ showLoader: false });
           setStatus("Manual lead saved.", "success");
         }
       } finally {
@@ -818,6 +942,8 @@
             await loadQueue();
           } else if (state.section === "deals" && !state.dealsLoaded) {
             await loadDeals();
+          } else if (state.section === "alerts" && !state.manualEntriesLoaded) {
+            await loadManualEntries();
           }
         } catch (error) {
           setStatus(error.message || "Failed to load section.", "error");
@@ -920,6 +1046,9 @@
     document.getElementById("refreshDealsBtn").addEventListener("click", () => {
       loadDeals().catch((error) => setStatus(error.message || "Failed to load execution pane.", "error"));
     });
+    document.getElementById("refreshManualEntriesBtn").addEventListener("click", () => {
+      loadManualEntries().catch((error) => setStatus(error.message || "Failed to load manual entries.", "error"));
+    });
     document.getElementById("saveAlertBtn").addEventListener("click", () => {
       saveAlert().catch((error) => setStatus(error.message || "Failed to submit lead.", "error"));
     });
@@ -932,6 +1061,8 @@
           await runSearch();
         } else if (state.section === "deals") {
           await loadDeals();
+        } else if (state.section === "alerts") {
+          await loadManualEntries();
         }
       } catch (error) {
         setStatus(error.message || "Refresh failed.", "error");
@@ -947,6 +1078,8 @@
       runSearch().catch((error) => setStatus(error.message, "error"));
     } else if (state.section === "deals") {
       loadDeals().catch((error) => setStatus(error.message, "error"));
+    } else if (state.section === "alerts") {
+      loadManualEntries().catch((error) => setStatus(error.message, "error"));
     }
   </script>
 </body>
