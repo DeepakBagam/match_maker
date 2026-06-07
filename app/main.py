@@ -104,18 +104,18 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
-@app.get("/manifest.webmanifest")
+@app.api_route("/manifest.webmanifest", methods=["GET", "HEAD"])
 def webmanifest():
     return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
 
 
-@app.get("/apple-touch-icon.png")
-@app.get("/apple-touch-icon-precomposed.png")
+@app.api_route("/apple-touch-icon.png", methods=["GET", "HEAD"])
+@app.api_route("/apple-touch-icon-precomposed.png", methods=["GET", "HEAD"])
 def apple_touch_icon():
     return FileResponse(STATIC_DIR / "icons" / "mobile-app-icon-180.png", media_type="image/png")
 
 
-@app.get("/favicon.ico")
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"])
 def favicon():
     return FileResponse(STATIC_DIR / "icons" / "mobile-app-icon-192.png", media_type="image/png")
 
