@@ -15,7 +15,7 @@ import os
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -52,7 +52,15 @@ AUTH_USERNAME = os.getenv("MATCHER_AUTH_USERNAME", "https://www.sheltersrealty.c
 AUTH_PASSWORD = os.getenv("MATCHER_AUTH_PASSWORD", "home@A1")
 SESSION_SECRET = os.getenv("MATCHER_SESSION_SECRET", "change-me-main-session-secret")
 INTERNAL_PROXY_TOKEN = os.getenv("MATCHER_INTERNAL_PROXY_TOKEN", "change-me-internal-proxy-token")
-AUTH_EXEMPT_PATHS = {"/login", "/logout", "/health"}
+AUTH_EXEMPT_PATHS = {
+    "/login",
+    "/logout",
+    "/health",
+    "/manifest.webmanifest",
+    "/apple-touch-icon.png",
+    "/apple-touch-icon-precomposed.png",
+    "/favicon.ico",
+}
 APP_TIMEZONE = ZoneInfo("Asia/Kolkata")
 
 _CPU_COUNT = os.cpu_count() or 1
@@ -94,6 +102,22 @@ app.add_middleware(AuthenticationMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=SESSION_SECRET, same_site="lax")
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/manifest.webmanifest")
+def webmanifest():
+    return FileResponse(STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+
+
+@app.get("/apple-touch-icon.png")
+@app.get("/apple-touch-icon-precomposed.png")
+def apple_touch_icon():
+    return FileResponse(STATIC_DIR / "icons" / "mobile-app-icon-180.png", media_type="image/png")
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return FileResponse(STATIC_DIR / "icons" / "mobile-app-icon-192.png", media_type="image/png")
 
 
 class ClearDataRequest(BaseModel):
