@@ -82,7 +82,7 @@ def _unauthorized_response(request: Request):
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in AUTH_EXEMPT_PATHS:
+        if request.url.path in AUTH_EXEMPT_PATHS or request.url.path.startswith("/static/"):
             return await call_next(request)
         if _is_authenticated_request(request):
             return await call_next(request)
