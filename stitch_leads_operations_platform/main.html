@@ -370,6 +370,8 @@
   </div>
 
   <script>
+    const SEARCH_DEBOUNCE_MS = 1000;
+
     const state = {
       section: "queue",
       queueMode: "today",
@@ -611,8 +613,9 @@
         window.clearTimeout(state.queueSearchHandle);
       }
       state.queueSearchHandle = window.setTimeout(() => {
+        state.queueSearchHandle = null;
         loadQueue().catch((error) => setStatus(error.message, "error"));
-      }, 250);
+      }, SEARCH_DEBOUNCE_MS);
     }
 
     function renderReferenceResults(rows) {
