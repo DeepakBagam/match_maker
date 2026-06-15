@@ -208,7 +208,10 @@
 
           <div class="space-y-3">
             <label class="block text-xs font-semibold uppercase tracking-[0.18em] text-soft" for="queueSearch">Lead Search</label>
-            <input class="w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="queueSearch" placeholder="Name, phone, area, broker" type="text" />
+            <div class="grid grid-cols-[minmax(0,1fr)_88px] gap-2">
+              <input class="w-full rounded-2xl border-line bg-wash text-sm focus:border-primary focus:ring-primary" id="queueSearch" placeholder="Name, phone, area, broker" type="text" />
+              <button class="rounded-2xl bg-primary px-3 py-2 text-sm font-semibold text-white shadow-card" id="queueSearchRunBtn" type="button">Run</button>
+            </div>
           </div>
 
           <div class="mt-4 grid grid-cols-2 gap-3">
@@ -370,8 +373,6 @@
   </div>
 
   <script>
-    const SEARCH_DEBOUNCE_MS = 1000;
-
     const state = {
       section: "queue",
       queueMode: "today",
@@ -383,7 +384,6 @@
       queuePage: 1,
       queuePageSize: 10,
       queueTotal: 0,
-      queueSearchHandle: null,
       queueLoaded: false,
       dealsLoaded: false,
       manualEntriesLoaded: false,
@@ -608,14 +608,10 @@
       }
     }
 
-    function scheduleQueueReload() {
-      if (state.queueSearchHandle) {
-        window.clearTimeout(state.queueSearchHandle);
-      }
-      state.queueSearchHandle = window.setTimeout(() => {
-        state.queueSearchHandle = null;
-        loadQueue().catch((error) => setStatus(error.message, "error"));
-      }, SEARCH_DEBOUNCE_MS);
+    async function runQueueSearch() {
+      state.queuePage = 1;
+      state.queueLoaded = false;
+      await loadQueue();
     }
 
     function renderReferenceResults(rows) {
@@ -976,9 +972,15 @@
 
     document.getElementById("queueSearch").addEventListener("input", (event) => {
       state.queueSearch = event.target.value || "";
-      state.queuePage = 1;
-      state.queueLoaded = false;
-      scheduleQueueReload();
+    });
+    document.getElementById("queueSearch").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        runQueueSearch().catch((error) => setStatus(error.message, "error"));
+      }
+    });
+    document.getElementById("queueSearchRunBtn").addEventListener("click", () => {
+      runQueueSearch().catch((error) => setStatus(error.message, "error"));
     });
 
     document.getElementById("queueFromDate").addEventListener("change", async (event) => {
